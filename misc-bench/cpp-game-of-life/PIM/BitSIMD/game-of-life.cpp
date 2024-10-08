@@ -93,9 +93,41 @@ void game_of_life_row(const std::vector<PimObjId> &pim_board, size_t row_idx, Pi
   pimAdd(pim_board[mid_idx - 1], tmp_pim_obj, tmp_pim_obj);
   pimAdd(pim_board[mid_idx + 1], tmp_pim_obj, tmp_pim_obj);
 
-  PimStatus status = pimEQScalar(tmp_pim_obj, result_obj, 3);
+  PimStatus status;
+  // PimStatus status = pimEQScalar(tmp_pim_obj, result_obj, 3);
+  // assert (status == PIM_OK);
+
+
+  // Read in sum bit 0 and move to R1
+  status = pimOpReadRowToSa(tmp_pim_obj, 0);
   assert (status == PIM_OK);
 
+  status = pimOpMove(tmp_pim_obj, PIM_RREG_SA, PIM_RREG_R1);
+  assert (status == PIM_OK);
+
+  // Read in sum bit 1
+  status = pimOpReadRowToSa(tmp_pim_obj, 1);
+  assert (status == PIM_OK);
+
+  // And together sum bit 0 and 1
+  status = pimOpAnd(tmp_pim_obj, PIM_RREG_SA, PIM_RREG_R1, PIM_RREG_R1);
+  assert (status == PIM_OK);
+
+  // Read in sum bit 2 and negate
+  status = pimOpReadRowToSa(tmp_pim_obj, 2);
+  assert (status == PIM_OK);
+
+  status = pimOpNot(tmp_pim_obj, PIM_RREG_SA, PIM_RREG_SA);
+  assert (status == PIM_OK);
+
+  // And and save result
+  status = pimOpAnd(tmp_pim_obj, PIM_RREG_SA, PIM_RREG_R1, PIM_RREG_SA);
+  assert (status == PIM_OK);
+
+  status = pimOpWriteSaToRow(result_obj, 0);
+  assert (status == PIM_OK);
+
+  // Non micro op code
   status = pimEQScalar(tmp_pim_obj, tmp_pim_obj, 2);
   assert (status == PIM_OK);
 
