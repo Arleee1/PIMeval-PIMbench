@@ -140,23 +140,29 @@ void print_pim_int(PimObjId pim_obj, uint64_t len) {
 
 void string_match(vector<string>& needles, string& haystack, vector<uint8_t>& matches) {
 
-  PimObjId haystack_pim = pimAlloc(PIM_ALLOC_AUTO, haystack.size() + 2, PIM_UINT8);
+  uint64_t haystack_pim_len = haystack.size() + 2;
+  uint64_t num_needles = needles.size();
+
+  PimObjId haystack_pim = pimAlloc(PIM_ALLOC_AUTO, haystack_pim_len, PIM_UINT8);
   assert(haystack_pim != -1);
 
-  // intermediate_pim, intermediate_pim_2, and result_pim can be replaced with booleans/1 bit ints
+  // intermediate_pim, intermediate_pim_2, and pim_results[i] can be replaced with booleans/1 bit ints
   PimObjId intermediate_pim = pimAllocAssociated(haystack_pim, PIM_UINT8);
   assert(intermediate_pim != -1);
 
   PimObjId intermediate_pim_2 = pimAllocAssociated(haystack_pim, PIM_UINT8);
   assert(intermediate_pim != -1);
 
-  PimObjId result_pim = pimAllocAssociated(haystack_pim, PIM_UINT8);
-  assert(result_pim != -1);
+  vector<PimObjId> pim_results;
+  for(uint64_t i=0; i<num_needles; ++i) {
+    pim_results.push_back(pimAllocAssociated(haystack_pim, PIM_UINT8));
+    assert(pim_results.back() != -1);
+  }
 
   PimObjId needle_pim = pimAllocAssociated(haystack_pim, PIM_UINT8);
   assert(needle_pim != -1);
 
-  PimStatus status = pimCopyHostToDevice((void *)haystack.c_str(), haystack_pim, 1, haystack.size()+1);
+  PimStatus status = pimCopyHostToDevice((void *)haystack.c_str(), haystack_pim, 1, haystack_pim_len - 1);
   assert (status == PIM_OK);
 
   constexpr char newline_char = '\n';
@@ -164,49 +170,65 @@ void string_match(vector<string>& needles, string& haystack, vector<uint8_t>& ma
   status = pimCopyHostToDevice((void *)&newline_char, haystack_pim, 0, 1);
   assert (status == PIM_OK);
 
-  status = pimCopyHostToDevice((void *)&newline_char, haystack_pim, haystack.size()+1, haystack.size()+2);
+  status = pimCopyHostToDevice((void *)&newline_char, haystack_pim, haystack_pim_len - 1, haystack_pim_len);
   assert (status == PIM_OK);
 
-  status = pimEQScalar(haystack_pim, result_pim, (uint64_t) '\n');
-  assert (status == PIM_OK);
-
-  status = pimEQScalar(haystack_pim, intermediate_pim, (uint64_t) '\r');
-  assert (status == PIM_OK);
-
-  status = pimOr(result_pim, intermediate_pim, result_pim);
-  assert (status == PIM_OK);
+  for(uint64_t i=0; i<num_needles; ++i) {
+    status = pimEQScalar(haystack_pim, pim_results[i], (uint64_t) '\n');
+    assert (status == PIM_OK);
+  }
 
   status = pimShiftElementsLeft(haystack_pim);
   assert (status == PIM_OK);
 
-  for(uint64_t i=0; i < needles.front().size(); ++i) {
-    status = pimBroadcastUInt(needle_pim, (uint64_t) needles.front()[i]);
-    assert (status == PIM_OK);
+  uint64_t needles_finished = 0;
 
-    status = pimEQ(haystack_pim, needle_pim, intermediate_pim);
-    assert (status == PIM_OK);
+  for(uint64_t i=0; needles_finished < num_needles; ++i) {
+    for(uint64_t j=0; j<num_needles; ++j) {
+      if(i > needles[j].size()) {
+        continue;
+      }
+      if(i == needles[j].size()) {
+        status = pimEQScalar(haystack_pim, intermediate_pim, (uint64_t) '\n');
+        assert (status == PIM_OK);
 
-    status = pimAnd(result_pim, intermediate_pim, result_pim);
-    assert (status == PIM_OK);
+        status = pimEQScalar(haystack_pim, intermediate_pim_2, (uint64_t) '\r');
+        assert (status == PIM_OK);
 
+        status = pimOr(intermediate_pim, intermediate_pim_2, intermediate_pim);
+        assert (status == PIM_OK);
+
+        status = pimAnd(pim_results[j], intermediate_pim, pim_results[j]);
+        assert (status == PIM_OK);
+
+        ++needles_finished;
+        continue;
+      }
+      
+      status = pimBroadcastUInt(needle_pim, (uint64_t) needles[j][i]);
+      assert (status == PIM_OK);
+
+      status = pimEQ(haystack_pim, needle_pim, intermediate_pim);
+      assert (status == PIM_OK);
+
+      status = pimAnd(pim_results[j], intermediate_pim, pim_results[j]);
+      assert (status == PIM_OK);
+    }
+
+    if(needles_finished >= num_needles) {
+      break;
+    }
     status = pimShiftElementsLeft(haystack_pim);
     assert (status == PIM_OK);
   }
 
-  status = pimEQScalar(haystack_pim, intermediate_pim, (uint64_t) '\n');
-  assert (status == PIM_OK);
+  for(uint64_t i=0; i<num_needles; ++i) {
+    uint64_t curr_sum;
+    status = pimRedSumUInt(pim_results[i], &curr_sum);
+    assert (status == PIM_OK);
 
-  status = pimEQScalar(haystack_pim, intermediate_pim_2, (uint64_t) '\r');
-  assert (status == PIM_OK);
-
-  status = pimOr(intermediate_pim, intermediate_pim_2, intermediate_pim);
-  assert (status == PIM_OK);
-
-  status = pimAnd(result_pim, intermediate_pim, result_pim);
-  assert (status == PIM_OK);
-
-  status = pimCopyDeviceToHost(result_pim, (void *)matches.data());
-  assert (status == PIM_OK);
+    matches[i] = (uint8_t) curr_sum;
+  }
 }
 
 // void string_match_cpu(string& needle, string& haystack, vector<uint8_t>& matches) {
@@ -244,16 +266,8 @@ int main(int argc, char* argv[])
     //   needles.push_back("");
     //   getString(needles.back(), params.keyLength);
     // }
-
-    // Potential problem scenario:
-    // Original looks for a line to match completely, not just an occurance
-    // In the below example, original would return false for "eld"
-    // However, my current implementation would return true for "eld"
-    // Solution Idea: treat needle as "\n" + needle + "\n"
-    // Use "\n" or "\r"
-    // Must adapt to begining and end of haystack
     haystack = "abc\ndef\nghi\neldkslkdfj\nhelloworld";
-    needles = {"eld", "abc", "lmp", "helloworld", "eld"};
+    needles = {"helloworld", "abc", "lmp", "helloworld", "eld", "slk", "eldkslkdfj"};
   } 
   else 
   {
@@ -268,7 +282,7 @@ int main(int argc, char* argv[])
 
   matches.resize(needles.size());
 
-  // Needles are already encrypted
+  // TODO: Needle encryption!
 
   // for(string& needle : needles) {
   //   for(uint64_t i=0; i<needle.size(); ++i) {
@@ -278,6 +292,15 @@ int main(int argc, char* argv[])
 
   //TODO: Check if vector can fit in one iteration. Otherwise need to run in multiple iteration.
   string_match(needles, haystack, matches);
+
+  for(uint64_t i=0; i<matches.size(); ++i) {
+    cout << i;
+    if(matches[i]) {
+      cout << " is a match\n";
+    } else {
+      cout << " is not a match\n";
+    }
+  }
 
   // if (params.shouldVerify) 
   // {
