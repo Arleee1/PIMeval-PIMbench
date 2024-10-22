@@ -225,6 +225,7 @@ void string_match(vector<string>& needles, string& haystack, vector<uint8_t>& ma
 
   for(uint64_t i=0; i<num_needles; ++i) {
     uint64_t curr_sum;
+    // Can be replaced with a max instead of a sum to check if there is a match, rather than how many matches there are
     status = pimRedSumUInt(pim_results[i], &curr_sum);
     assert (status == PIM_OK);
 
