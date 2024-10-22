@@ -204,11 +204,8 @@ void string_match(vector<string>& needles, string& haystack, vector<uint8_t>& ma
         ++needles_finished;
         continue;
       }
-      
-      status = pimBroadcastUInt(needle_pim, (uint64_t) needles[j][i]);
-      assert (status == PIM_OK);
 
-      status = pimEQ(haystack_pim, needle_pim, intermediate_pim);
+      status = pimEQScalar(haystack_pim, intermediate_pim, (uint64_t) needles[j][i]);
       assert (status == PIM_OK);
 
       status = pimAnd(pim_results[j], intermediate_pim, pim_results[j]);
@@ -255,7 +252,7 @@ void getString(string& str, uint64_t len) {
 int main(int argc, char* argv[])
 {
   struct Params params = getInputParams(argc, argv);
-  std::cout << "Running PIM string match for string size: " << params.stringLength << ", key size: " << params.keyLength << "\n";
+  std::cout << "Running PIM string match for string size: " << params.stringLength << ", key size: " << params.keyLength << ", number of keys: " << params.numKeys << "\n";
   string haystack;
   vector<string> needles;
   vector<uint8_t> matches;
