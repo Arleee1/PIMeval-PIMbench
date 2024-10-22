@@ -178,6 +178,10 @@ void string_match(vector<string>& needles, string& haystack, vector<uint8_t>& ma
     assert (status == PIM_OK);
   }
 
+  // Encrypt haystack
+  status = pimAddScalar(haystack_pim, haystack_pim, (uint64_t) CHAR_OFFSET);
+  assert (status == PIM_OK);
+
   status = pimShiftElementsLeft(haystack_pim);
   assert (status == PIM_OK);
 
@@ -189,10 +193,10 @@ void string_match(vector<string>& needles, string& haystack, vector<uint8_t>& ma
         continue;
       }
       if(i == needles[j].size()) {
-        status = pimEQScalar(haystack_pim, intermediate_pim, (uint64_t) '\n');
+        status = pimEQScalar(haystack_pim, intermediate_pim, (uint64_t) ((uint8_t)'\n' + (uint8_t)CHAR_OFFSET));
         assert (status == PIM_OK);
 
-        status = pimEQScalar(haystack_pim, intermediate_pim_2, (uint64_t) '\r');
+        status = pimEQScalar(haystack_pim, intermediate_pim_2, (uint64_t) ((uint8_t)'\r' + (uint8_t)CHAR_OFFSET));
         assert (status == PIM_OK);
 
         status = pimOr(intermediate_pim, intermediate_pim_2, intermediate_pim);
@@ -279,13 +283,11 @@ int main(int argc, char* argv[])
 
   matches.resize(needles.size());
 
-  // TODO: Needle encryption!
-
-  // for(string& needle : needles) {
-  //   for(uint64_t i=0; i<needle.size(); ++i) {
-  //     needle[i] += CHAR_OFFSET;
-  //   }
-  // }
+  for(string& needle : needles) {
+    for(uint64_t i=0; i<needle.size(); ++i) {
+      needle[i] += CHAR_OFFSET;
+    }
+  }
 
   //TODO: Check if vector can fit in one iteration. Otherwise need to run in multiple iteration.
   string_match(needles, haystack, matches);
