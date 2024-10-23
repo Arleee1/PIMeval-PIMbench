@@ -100,14 +100,43 @@ struct Params input_params(int argc, char **argv)
 // x -> haystack index
 // y -> needles index
 // Must set matches array to 0s ahead of time
-__global__ void string_match(char* haystack, size_t haystack_len, char* needles, uint64_t num_needles, uint64_t* needle_indexes, unsigned long long int* matches) {
+__global__ void string_match(char* haystack, size_t haystack_len, char* needles, uint64_t num_needles, uint64_t* needle_indexes, unsigned long long int* matches, unsigned long long int needles_len) {
 
   size_t haystack_idx = blockIdx.x*blockDim.x + threadIdx.x;
   size_t needle_idx = blockIdx.y*blockDim.y + threadIdx.y;
-
+  size_t old_needle_idx = needle_idx;
+  
+  if(haystack_idx == 0 && needle_idx == 0) {
+    printf("gpu haystack:");
+    for(uint64_t i=0; i<haystack_len; ++i) {
+      printf("%c", haystack[i]);
+    }
+    printf("\n");
+    printf("gpu needles:");
+    for(uint64_t i=0; i<needles_len; ++i) {
+      printf("%c", needles[i]);
+    }
+    printf("\n");
+    printf("gpu needle indexes:");
+    for(uint64_t i=0; i<num_needles; ++i) {
+      printf("%d ", needle_indexes[i]);
+    }
+    printf("\n");
+  }
+  bool should_match = (needle_idx == 1) && (haystack_idx == 0);
+  if(should_match) {
+    printf("should match reached!\n");
+  }
   if (haystack_idx < haystack_len && needle_idx < num_needles && haystack[haystack_idx] == '\n') {
     needle_idx = needle_indexes[needle_idx];
+    if(should_match) {
+      printf("needle char index: %d\n", needle_idx);
+    }
     ++haystack_idx;
+    if(should_match) {
+      printf("needle char index: %d\n", needle_idx);
+      printf("before loop - haystack idx: %d, needle_idx: %d\n", (int)haystack_idx, (int)needle_idx);
+    }
     int i;
     for (i = 0; needles[needle_idx + i] != '\n' && i+haystack_idx < haystack_len; ++i) {
       if (haystack[haystack_idx + i] != needles[needle_idx + i]) {
@@ -115,8 +144,15 @@ __global__ void string_match(char* haystack, size_t haystack_len, char* needles,
       }
     }
 
+    if(should_match) {
+      printf("after loop - needle_idx: %d, i: %d, haystack_idx: %d\n", (int)needle_idx, (int)i, (int)haystack_idx);
+      printf("after loop - needle char: %d, haystack char: %d\n", (int)needles[needle_idx + i], (int)haystack[i+haystack_idx]);
+      printf("after loop - newline num: %d\n", (int)'\n');
+    }
+
     if(needles[needle_idx + i] == '\n' && i+haystack_idx < haystack_len && (haystack[i+haystack_idx] == '\n' || haystack[i+haystack_idx] == '\r')) {
-      atomicAdd(matches + needle_idx, (unsigned long long int)1);
+      printf("adding to matches for key: %d\n", (int) old_needle_idx);
+      atomicAdd(matches + old_needle_idx, (unsigned long long int)1);
     }
   }
 }
@@ -170,8 +206,8 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  // Ensure that haystack ends in '\n'
-  haystack += '\n';
+  // Ensure that haystack starts and ends in '\n'
+  haystack = '\n' + haystack + '\n';
 
   // Setup length variables
   uint64_t haystack_len = haystack.size();
@@ -278,7 +314,7 @@ int main(int argc, char **argv)
 
   cudaEventRecord(start, 0);
 
-  string_match<<<dimGrid, dimBlock>>>(gpu_haystack, haystack_len, gpu_needles, num_needles, gpu_needle_indexes, gpu_matches);
+  string_match<<<dimGrid, dimBlock>>>(gpu_haystack, haystack_len, gpu_needles, num_needles, gpu_needle_indexes, gpu_matches, curr_index);
   
   cuda_error = cudaGetLastError();
   if (cuda_error != cudaSuccess)
