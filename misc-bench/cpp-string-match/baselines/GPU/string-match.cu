@@ -1,5 +1,5 @@
-/* File:     scale.cu
- * Purpose:  Implement vector scaling on a GPU
+/* File:     string-match.cu
+ * Purpose:  Implement string matching on a GPU
  *
  */
 
@@ -18,13 +18,16 @@
 
 #include "utilBaselines.h"
 
+constexpr uint8_t CHAR_OFFSET = 5;
+
 using namespace std;
 
 // Params ---------------------------------------------------------------------
 typedef struct Params
 {
-  uint64_t stringLength;
+  int64_t stringLength;
   uint64_t keyLength;
+  uint64_t numKeys;
   char *inputFile;
   bool shouldVerify;
 } Params;
@@ -36,8 +39,8 @@ void usage()
           "\n"
           "\n    -s    string size (default=2048 elements)"
           "\n    -k    key size (default = 20 elements)"
-          "\n    -c    dramsim config file"
-          "\n    -i    input file containing string and key (default=generates strings with random characters)"
+          "\n    -n    number of keys (default = 4 keys)"
+          "\n    -i    input file containing string and keys (default=generates strings with random characters)"
           "\n    -v    t = verifies PIM output with host output. (default=false)"
           "\n");
 }
@@ -47,11 +50,12 @@ struct Params input_params(int argc, char **argv)
   struct Params p;
   p.stringLength = 2048;
   p.keyLength = 20;
+  p.numKeys = 4;
   p.inputFile = nullptr;
   p.shouldVerify = false;
 
   int opt;
-  while ((opt = getopt(argc, argv, "h:s:k:c:i:v:")) >= 0)
+  while ((opt = getopt(argc, argv, "h:s:k:n:i:v:")) >= 0)
   {
     switch (opt)
     {
@@ -64,6 +68,9 @@ struct Params input_params(int argc, char **argv)
       break;
     case 'k':
       p.keyLength = strtoull(optarg, NULL, 0);
+      break;
+    case 'n':
+      p.numKeys = strtoull(optarg, NULL, 0);
       break;
     case 'i':
       p.inputFile = optarg;
@@ -82,15 +89,34 @@ struct Params input_params(int argc, char **argv)
 
 /**
  * @brief gpu string match kernel
+ * @param haystack full haystack, with words seperated by and ending in '\n'
+ * @param haystack_len length of the haystack, including all '\n' delimiters
+ * @param needles array of all of the needles adjacent to each other, separated and terminated by '\0'
+ * @param num_needles number of needles
+ * @param needle_indexes prefix array of needle lengths
+ * @param matches result, matches[i] > 0 iff there is a match for the ith needle
  */
-__global__ void string_match(char* haystack, size_t haystack_len, char* needle, size_t needle_len, uint8_t* matches) {
-  size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
-  if (idx < haystack_len - needle_len + 1) {
-    matches[idx] = 1;
-    for (int i = 0; i < needle_len; ++i) {
-      if (haystack[idx + i] != needle[i]) {
-          matches[idx] = 0;
+
+// x -> haystack index
+// y -> needles index
+// Must set matches array to 0s ahead of time
+__global__ void string_match(char* haystack, size_t haystack_len, char* needles, uint64_t num_needles, uint64_t* needle_indexes, unsigned long long int* matches) {
+
+  size_t haystack_idx = blockIdx.x*blockDim.x + threadIdx.x;
+  size_t needle_idx = blockIdx.y*blockDim.y + threadIdx.y;
+
+  if (haystack_idx < haystack_len && needle_idx < num_needles && haystack[haystack_idx] == '\n') {
+    needle_idx = needle_indexes[needle_idx];
+    ++haystack_idx;
+    int i;
+    for (i = 0; needles[needle_idx + i] != '\n' && i+haystack_idx < haystack_len; ++i) {
+      if (haystack[haystack_idx + i] != needles[needle_idx + i]) {
+          break;
       }
+    }
+
+    if(needles[needle_idx + i] == '\n' && i+haystack_idx < haystack_len && (haystack[i+haystack_idx] == '\n' || haystack[i+haystack_idx] == '\r')) {
+      atomicAdd(matches + needle_idx, (unsigned long long int)1);
     }
   }
 }
@@ -122,14 +148,21 @@ void getString(string& str, uint64_t len) {
 int main(int argc, char **argv)
 {
   struct Params params = input_params(argc, argv);
-  std::cout << "Running PIM string match for string size: " << params.stringLength << ", key size: " << params.keyLength << "\n";
-  string haystack, needle;
-  vector<uint8_t> matches;
+  std::cout << "Running GPU string match for string size: " << params.stringLength << ", key size: " << params.keyLength << ", number of keys: " << params.numKeys << "\n";
+  string haystack;
+  vector<string> needles;
+  vector<unsigned long long int> matches;
 
   if (params.inputFile == nullptr)
   {
-    getString(haystack, params.stringLength);
-    getString(needle, params.keyLength);
+    // getString(haystack, params.stringLength);
+    // for(uint64_t i=0; i < params.numKeys; ++i) {
+    //   needles.push_back("");
+    //   getString(needles.back(), params.keyLength);
+    // }
+
+    haystack = "abc\ndef\nghi\neldkslkdfj\nhelloworld";
+    needles = {"helloworld", "abc", "lmp", "helloworld", "eld", "slk", "eldkslkdfj"};
   } 
   else 
   {
@@ -137,14 +170,44 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  char* gpu_haystack;
-  char* gpu_needle;
-  uint8_t* gpu_matches;
-  matches.resize(params.stringLength);
+  // Ensure that haystack ends in '\n'
+  haystack += '\n';
 
-  size_t haystack_sz = sizeof(char)*params.stringLength;
-  size_t needle_sz = sizeof(char)*params.keyLength;
-  size_t matches_sz = sizeof(uint8_t)*params.stringLength;
+  // Setup length variables
+  uint64_t haystack_len = haystack.size();
+  uint64_t num_needles = needles.size();
+
+  // Setup needle indexes for gpu to use
+  vector<uint64_t> needle_indexes;
+  needle_indexes.reserve(num_needles);
+  uint64_t curr_index = 0;
+  for(string& needle : needles) {
+    needle_indexes.push_back(curr_index);
+    // Add 1 for the delimiter between needles
+    curr_index += needle.size() + 1;
+  }
+
+  //Resize result
+  matches.resize(num_needles);
+
+  // Setup concataned needles
+  string needles_concat;
+  needles_concat.reserve(curr_index);
+  for(string& needle : needles) {
+    needles_concat += needle + '\n';
+  }
+
+  // char* haystack, size_t haystack_len, char* needles, uint64_t num_needles, uint64_t* needle_indexes
+
+  char* gpu_haystack;
+  char* gpu_needles;
+  uint64_t* gpu_needle_indexes;
+  unsigned long long int* gpu_matches;
+
+  size_t haystack_sz = sizeof(char)*haystack_len;
+  size_t needle_sz = sizeof(char)*curr_index;
+  size_t needle_indexes_sz = sizeof(uint64_t)*num_needles;
+  size_t matches_sz = sizeof(unsigned long long int)*num_needles;
 
   cudaError_t cuda_error;
   cuda_error = cudaMalloc((void**)&gpu_haystack, haystack_sz);
@@ -161,14 +224,29 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  cuda_error = cudaMalloc((void**)&gpu_needle, needle_sz);
+  cuda_error = cudaMalloc((void**)&gpu_needles, needle_sz);
 
   if(cuda_error != cudaSuccess) {
     std::cerr << "Cuda Error: " << cudaGetErrorString(cuda_error) << "\n";
     exit(1);
   }
 
-  cuda_error = cudaMemcpy(gpu_needle, needle.c_str(), needle_sz, cudaMemcpyHostToDevice);
+  cuda_error = cudaMemcpy(gpu_needles, needles_concat.c_str(), needle_sz, cudaMemcpyHostToDevice);
+
+  if(cuda_error != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(cuda_error) << "\n";
+    exit(1);
+  }
+
+  // Needle indexes
+  cuda_error = cudaMalloc((void**)&gpu_needle_indexes, needle_indexes_sz);
+
+  if(cuda_error != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(cuda_error) << "\n";
+    exit(1);
+  }
+
+  cuda_error = cudaMemcpy(gpu_needle_indexes, needle_indexes.data(), needle_indexes_sz, cudaMemcpyHostToDevice);
 
   if(cuda_error != cudaSuccess) {
     std::cerr << "Cuda Error: " << cudaGetErrorString(cuda_error) << "\n";
@@ -189,6 +267,10 @@ int main(int argc, char **argv)
     exit(1);
   }
 
+  dim3 dimBlock(16, 16);
+  dim3 dimGrid((haystack_len + dimBlock.x - 1) / dimBlock.x, (num_needles + dimBlock.y - 1) / dimBlock.y);
+
+
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
@@ -196,7 +278,7 @@ int main(int argc, char **argv)
 
   cudaEventRecord(start, 0);
 
-  string_match<<<(params.stringLength + 1023) / 1024, 1024>>>(gpu_haystack, params.stringLength, gpu_needle, params.keyLength, gpu_matches);
+  string_match<<<dimGrid, dimBlock>>>(gpu_haystack, haystack_len, gpu_needles, num_needles, gpu_needle_indexes, gpu_matches);
   
   cuda_error = cudaGetLastError();
   if (cuda_error != cudaSuccess)
@@ -218,30 +300,40 @@ int main(int argc, char **argv)
       exit(1);
   }
   cudaFree(gpu_haystack);
-  cudaFree(gpu_needle);
+  cudaFree(gpu_needles);
+  cudaFree(gpu_needle_indexes);
   cudaFree(gpu_matches);
 
-  if (params.shouldVerify) 
-  {
-    vector<uint8_t> matches_cpu;
-    matches_cpu.resize(haystack.size());
-    string_match_cpu(needle, haystack, matches_cpu);
-
-    // verify result
-    bool is_correct = true;
-    #pragma omp parallel for
-    for (unsigned i = 0; i < matches.size(); ++i)
-    {
-      if (matches[i] != matches_cpu[i])
-      {
-        std::cout << "Wrong answer: " << unsigned(matches[i]) << " (expected " << unsigned(matches_cpu[i]) << "), at index: " << i << std::endl;
-        is_correct = false;
-      }
-    }
-    if(is_correct) {
-      std::cout << "Correct for string match!" << std::endl;
+  for(uint64_t i=0; i<matches.size(); ++i) {
+    cout << i;
+    if(matches[i]) {
+      cout << " is a match\n";
+    } else {
+      cout << " is not a match\n";
     }
   }
+
+  // if (params.shouldVerify) 
+  // {
+  //   vector<uint8_t> matches_cpu;
+  //   matches_cpu.resize(haystack.size());
+  //   string_match_cpu(needle, haystack, matches_cpu);
+
+  //   // verify result
+  //   bool is_correct = true;
+  //   #pragma omp parallel for
+  //   for (unsigned i = 0; i < matches.size(); ++i)
+  //   {
+  //     if (matches[i] != matches_cpu[i])
+  //     {
+  //       std::cout << "Wrong answer: " << unsigned(matches[i]) << " (expected " << unsigned(matches_cpu[i]) << "), at index: " << i << std::endl;
+  //       is_correct = false;
+  //     }
+  //   }
+  //   if(is_correct) {
+  //     std::cout << "Correct for string match!" << std::endl;
+  //   }
+  // }
 
   return 0;
 }
