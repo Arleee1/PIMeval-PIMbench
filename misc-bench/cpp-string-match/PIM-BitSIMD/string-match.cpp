@@ -365,13 +365,23 @@ int main(int argc, char* argv[])
     return 1;
   }
   
-  if (!createDevice(params.configFile))
-  {
-    return 1;
-  }
+  // if (!createDevice(params.configFile))
+  // {
+  //   return 1;
+  // }
+  PimStatus status;
+
+  unsigned numRanks = 2;
+  unsigned numBankPerRank = 128; // 8 chips * 16 banks
+  unsigned numSubarrayPerBank = 32;
+  unsigned numRows = 1024;
+  unsigned numCols = 8192;
+
+  status = pimCreateDevice(PIM_DEVICE_BITSIMD_V, numRanks, numBankPerRank, numSubarrayPerBank, numRows, numCols);
+  assert(status == PIM_OK);
 
   PimDeviceProperties deviceProp;
-  PimStatus status = pimGetDeviceProperties(&deviceProp);
+  status = pimGetDeviceProperties(&deviceProp);
   assert(status == PIM_OK);
 
   matches.resize(haystack.size(), 0);
