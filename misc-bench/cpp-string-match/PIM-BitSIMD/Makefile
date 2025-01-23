@@ -16,11 +16,12 @@ EXEC := string-match.out
 SRC := string-match.cpp
 
 STRING_MATCH_INCLUDE = -I./../include
+STRING_MATCH_BITSIMD_INCLUDE = -I./include
 
 debug perf dramsim3_integ: $(EXEC)
 
 $(EXEC): $(SRC) $(DEPS)
-	$(CXX) $< $(CXXFLAGS) $(STRING_MATCH_INCLUDE) -o $@
+	$(CXX) $< $(CXXFLAGS) $(STRING_MATCH_INCLUDE) $(STRING_MATCH_BITSIMD_INCLUDE) -o $@
 
 clean:
 	rm -rf $(EXEC) *.dSYM
