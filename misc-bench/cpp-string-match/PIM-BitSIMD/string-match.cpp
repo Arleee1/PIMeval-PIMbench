@@ -276,6 +276,9 @@ void string_match(std::vector<std::string>& needles, std::string& haystack, std:
 
       if(needles_finished_this_iter < needles_this_iteration) {
         for(size_t i=0; i<4; ++i) {
+          // TODO: Shifting left sets right elements to 0/false
+          // Currently, false represents a match, so keys that are cutoff are assumed to match
+          // Fix by representing true as a match
           status = pimShiftElementsLeft(haystack_matches[i]);
           assert (status == PIM_OK);
         }
