@@ -112,7 +112,6 @@ void printVec(std::vector<T>& vec) {
 }
 
 // Generates lookup table for every haystack character match
-// Inverts table to slightly optimize later steps
 std::vector<PimObjId> create_haystack_matches(const std::string& haystack) {
   PimStatus status;
 
@@ -143,11 +142,6 @@ std::vector<PimObjId> create_haystack_matches(const std::string& haystack) {
 
   pimFree(haystack_pim);
   pimFree(pim_scratch);
-
-  for(size_t i=0; i<4; ++i) {
-    status = pimXnorScalar(haystack_matches[i], haystack_matches[i], 0);
-    assert(status == PIM_OK);
-  }
 
   return haystack_matches;
 }
@@ -265,7 +259,7 @@ void string_match(std::vector<std::string>& needles, std::string& haystack, std:
 
           // status = pimAnd(pim_individual_needle_matches[needle_idx_pim], intermediate_pim, pim_individual_needle_matches[needle_idx_pim]);
           // assert (status == PIM_OK);
-          status = pimOr1bit(pim_individual_needle_matches[needle_matches_ind], needle_matches_offset, haystack_matches[haystack_matches_ind], haystack_matches_offset, pim_individual_needle_matches[needle_matches_ind], needle_matches_offset);
+          status = pimAnd1bit(pim_individual_needle_matches[needle_matches_ind], needle_matches_offset, haystack_matches[haystack_matches_ind], haystack_matches_offset, pim_individual_needle_matches[needle_matches_ind], needle_matches_offset);
           assert (status == PIM_OK);
         }
 
@@ -296,6 +290,9 @@ void string_match(std::vector<std::string>& needles, std::string& haystack, std:
       // Would be replaced with indexing into 1bit pim array
       size_t needle_matches_ind = pim_needle_idx/8;
       size_t needle_matches_offset = pim_needle_idx%8;
+
+      status = pimNot1bit(pim_individual_needle_matches[needle_matches_ind], needle_matches_offset, pim_individual_needle_matches[needle_matches_ind], needle_matches_offset);
+      assert (status == PIM_OK);
 
       status = pimCast1BitTo32Bit(pim_individual_needle_matches[needle_matches_ind], needle_matches_offset, intermediate_pim);
       assert (status == PIM_OK);

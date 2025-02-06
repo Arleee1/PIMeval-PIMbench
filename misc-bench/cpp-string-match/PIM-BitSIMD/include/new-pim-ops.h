@@ -42,7 +42,36 @@ PimStatus pimCopyDeviceToDevice1Bit(PimObjId src, PimObjId src_offset, PimObjId 
 
 // Ors 2 1bit objects into a 3rd 1bit object (associated)
 // All PimObjId parameters and offsets should be replaced with 1bit pim objects
-PimStatus pimOr1bit(PimObjId src1, uint64_t src1_offset, PimObjId src2, uint64_t src2_offset, PimObjId dest, uint64_t dest_offset) {
+// PimStatus pimOr1bit(PimObjId src1, uint64_t src1_offset, PimObjId src2, uint64_t src2_offset, PimObjId dest, uint64_t dest_offset) {
+
+//     PimStatus status;
+//     status = pimOpReadRowToSa(src1, src1_offset);
+//     if(status != PIM_OK) {
+//         return status;
+//     }
+
+//     status = pimOpMove(src1, PIM_RREG_SA, PIM_RREG_R1);
+//     if(status != PIM_OK) {
+//         return status;
+//     }
+
+//     status = pimOpReadRowToSa(src2, src2_offset);
+//     if(status != PIM_OK) {
+//         return status;
+//     }
+
+//     status = pimOpOr(src1, PIM_RREG_SA, PIM_RREG_R1, PIM_RREG_SA);
+//     if(status != PIM_OK) {
+//         return status;
+//     }
+
+//     status = pimOpWriteSaToRow(dest, dest_offset);
+//     return status;
+// }
+
+// Ands 2 1bit objects into a 3rd 1bit object (associated)
+// All PimObjId parameters and offsets should be replaced with 1bit pim objects
+PimStatus pimAnd1bit(PimObjId src1, uint64_t src1_offset, PimObjId src2, uint64_t src2_offset, PimObjId dest, uint64_t dest_offset) {
 
     PimStatus status;
     status = pimOpReadRowToSa(src1, src1_offset);
@@ -60,7 +89,26 @@ PimStatus pimOr1bit(PimObjId src1, uint64_t src1_offset, PimObjId src2, uint64_t
         return status;
     }
 
-    status = pimOpOr(src1, PIM_RREG_SA, PIM_RREG_R1, PIM_RREG_SA);
+    status = pimOpAnd(src1, PIM_RREG_SA, PIM_RREG_R1, PIM_RREG_SA);
+    if(status != PIM_OK) {
+        return status;
+    }
+
+    status = pimOpWriteSaToRow(dest, dest_offset);
+    return status;
+}
+
+// Inverts a 1bit pim object into another 1bit object (associated)
+// All PimObjId parameters and offsets should be replaced with 1bit pim objects
+PimStatus pimNot1bit(PimObjId src, uint64_t src_offset, PimObjId dest, uint64_t dest_offset) {
+
+    PimStatus status;
+    status = pimOpReadRowToSa(src, src_offset);
+    if(status != PIM_OK) {
+        return status;
+    }
+
+    status = pimOpNot(src, PIM_RREG_SA, PIM_RREG_SA);
     if(status != PIM_OK) {
         return status;
     }
