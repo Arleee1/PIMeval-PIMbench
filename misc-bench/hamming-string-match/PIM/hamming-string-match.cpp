@@ -202,9 +202,12 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
 //! @param[in]  isHorizontal  Specifies if the PIM device is horizontal or vertical
 //! @param[out] matches The result, a list of matches of the size of the haystack
 void hammingStringMatch(const std::vector<std::string>& needles, const std::string& haystack, const uint64_t maxHammingDistance, const NeedlesTable& needlesTable, const bool isHorizontal, std::vector<int>& matches) {
+  using NeedlesTableList = std::vector<std::vector<std::vector<size_t>>>;
+  
   PimStatus status;
 
-  const std::vector<std::vector<std::vector<size_t>>>& needlesTableOrdering = needlesTable.needlesCharsInOrder;
+  const NeedlesTableList& needlesTableOrdering = needlesTable.needlesCharsInOrder;
+  const NeedlesTableList& needlesTableEnding = needlesTable.needlesEnding;
 
   // Stores the text that is being checked for the needles
   PimObjId haystackPim = pimAlloc(PIM_ALLOC_AUTO, haystack.size(), PIM_UINT32);
@@ -239,7 +242,7 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
   }
   
 
-  if(needlesTableOrdering.empty() || needlesTableOrdering[0].empty()) {
+  if(needlesTableOrdering.empty() || needlesTableOrdering[0].empty() || needlesTableEnding.empty() || needlesTableEnding[0].empty()) {
     std::cerr << "Error: The needles table is empty" << std::endl;
     exit(1);
   }
@@ -319,6 +322,36 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         prevChar = currentChar;
       }
 
+      for(uint64_t needleIdx=0; needleIdx < needlesTableEnding[iter][charIdx].size(); ++needleIdx) {
+
+        uint64_t needleIdxHost = needlesTableEnding[iter][charIdx][needleIdx]; // Can be used to index into needles
+
+        if(needles[needleIdxHost].size() <= maxHammingDistance) {
+          // This means that the string will match everywhere (except for where it would go off the end)
+          // Skip matching calculation for this needle for now, will be done later
+          continue;
+        }
+        
+        uint64_t needleIdxPim = (needleIdxHost - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
+        
+        if(isHorizontal) {
+          status = pimNEScalar(haystackPim, intermediatePim, (uint64_t) 0);
+          assert (status == PIM_OK);
+
+          status = pimMul(pimIndividualNeedleMatches[needleIdxPim], intermediatePim, pimIndividualNeedleMatches[needleIdxPim]);
+          assert (status == PIM_OK);
+        } else {
+          status = pimEQScalar(haystackPim, intermediatePim, (uint64_t) 0);
+          assert (status == PIM_OK);
+
+          status = pimSubScalar(intermediatePim, intermediatePim, 1);
+          assert (status == PIM_OK);
+
+          status = pimAnd(pimIndividualNeedleMatches[needleIdxPim], intermediatePim, pimIndividualNeedleMatches[needleIdxPim]);
+          assert (status == PIM_OK);
+        }
+      }
+      
       // Shift the haystack to the left to check the next character in it
       // Only shift if there will be another round of character checks in this iteration
       if(charIdx + 1 < needlesTableOrdering[iter].size()) {
