@@ -153,16 +153,9 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
     // Skip checking them by keeping track of the shortest needle that is long enough to have the current character
     uint64_t currentStartNeedle = firstNeedleThisIteration;
     resultTableOrdering[iter].resize(longestNeedleThisIteration);
-    resultTableEnding[iter].resize(longestNeedleThisIteration);
-    for(uint64_t charInd = 0; /* Check done inside loop*/; ++charInd) {
+    for(uint64_t charInd = 0; charInd < longestNeedleThisIteration; ++charInd) {
       while(needles[currentStartNeedle].size() <= charInd) {
-        if(charInd > 0) {
-          resultTableEnding[iter][charInd - 1].push_back(currentStartNeedle);
-        }
         ++currentStartNeedle;
-      }
-      if(charInd == longestNeedleThisIteration) {
-        break;
       }
       std::vector<size_t>& currentTableRow = resultTableOrdering[iter][charInd];
       currentTableRow.resize(1 + lastNeedleThisIteration - currentStartNeedle);
@@ -174,6 +167,11 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
       std::sort(currentTableRow.begin(), currentTableRow.end(), [&needles, &charInd](auto& l, auto& r) {
         return needles[l][charInd] < needles[r][charInd];
       });
+    }
+
+    resultTableEnding[iter].resize(longestNeedleThisIteration);
+    for(uint64_t needleIdx=firstNeedleThisIteration; needleIdx <= lastNeedleThisIteration; ++needleIdx) {
+      resultTableEnding[iter][needles[needleIdx].size() - 1].push_back(needleIdx);
     }
 
     needlesDone += needlesThisIteration;
