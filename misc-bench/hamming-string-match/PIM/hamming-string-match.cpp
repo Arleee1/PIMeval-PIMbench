@@ -96,7 +96,30 @@ struct NeedlesTable {
 
   //! @brief Specifies the needles that are ending (out of characters) for each step
   NeedlesTableList needlesEnding;
+
+  //! @brief Says how to get from actual needle index to sorted needle index
+  std::vector<size_t> actualToSortedNeedles;
 };
+
+void print(std::vector<std::vector<size_t>>& tb) {
+  for(auto& v : tb) {
+    if(v.empty()) {
+      std::cout << "none";
+    }
+    for(auto e : v) {
+      std::cout << e << ", ";
+    }
+    std::cout << std::endl;
+  }
+  std::cout << std::endl;
+}
+
+void pv(std::vector<size_t>& v) {
+  for(auto& e : v) {
+    std::cout << e << ", ";
+  }
+  std::cout << std::endl;
+}
 
 //! @brief  Precomputes a more optimal order to match keys/needles on PIM device for calculation reuse
 //! @details Instead of calling pimNEScalar multiple times for the same character, call only once per character per char index and reuse result
@@ -108,16 +131,21 @@ struct NeedlesTable {
 //! @return  A table representing a better ordering to match the needles
 NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
   using NeedlesTableList = std::vector<std::vector<std::vector<size_t>>>;
+  NeedlesTable resultTable;
+  NeedlesTableList& resultTableOrdering = resultTable.needlesCharsInOrder;
+  NeedlesTableList& resultTableEnding = resultTable.needlesEnding;
+  std::vector<size_t>& resultTableActualToSorted = resultTable.actualToSortedNeedles;
 
   std::vector<size_t> sortedToActualNeedles(needles.size());
   std::iota(sortedToActualNeedles.begin(), sortedToActualNeedles.end(), 0);
   std::sort(sortedToActualNeedles.begin(), sortedToActualNeedles.end(), [&needles](auto l, auto r) {
     return needles[l].size() < needles[r].size();
   });
-  
-  NeedlesTable resultTable;
-  NeedlesTableList& resultTableOrdering = resultTable.needlesCharsInOrder;
-  NeedlesTableList& resultTableEnding = resultTable.needlesEnding;
+
+  resultTableActualToSorted.resize(needles.size());
+  for(uint64_t needleIdx=0; needleIdx<needles.size(); ++needleIdx) {
+    resultTableActualToSorted[sortedToActualNeedles[needleIdx]] = needleIdx;
+  }
   
   // If vertical, each pim object takes 32 rows, 1 row if horizontal
   // Three objects used by haystack, intermediate, and haystack copy
@@ -199,11 +227,11 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
 //! @param[out] matches The result, a list of matches of the size of the haystack
 void hammingStringMatch(const std::vector<std::string>& needles, const std::string& haystack, const uint64_t maxHammingDistance, const NeedlesTable& needlesTable, const bool isHorizontal, std::vector<int>& matches) {
   using NeedlesTableList = std::vector<std::vector<std::vector<size_t>>>;
-  
-  PimStatus status;
-
   const NeedlesTableList& needlesTableOrdering = needlesTable.needlesCharsInOrder;
   const NeedlesTableList& needlesTableEnding = needlesTable.needlesEnding;
+  const std::vector<size_t>& needlesTableActualToSorted = needlesTable.actualToSortedNeedles;
+  
+  PimStatus status;
 
   // Stores the text that is being checked for the needles
   PimObjId haystackPim = pimAlloc(PIM_ALLOC_AUTO, haystack.size(), PIM_UINT32);
@@ -318,14 +346,14 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         prevChar = currentChar;
       }
 
-      if(!needlesTableEnding[iter][charIdx].empty()) {
-        status = pimNEScalar(haystackPim, intermediatePim, (uint64_t) 0L);
-        assert (status == PIM_OK);
-      }
-
       if(iter >= needlesTableEnding.size() || charIdx >= needlesTableEnding[iter].size()) {
         std::cerr << "Error: Needles table incorrectly formatted" << std::endl;
         exit(1);
+      }
+
+      if(!needlesTableEnding[iter][charIdx].empty()) {
+        status = pimNEScalar(haystackPim, intermediatePim, (uint64_t) 0L);
+        assert (status == PIM_OK);
       }
 
       // This section serves to handle an edge case that can cause matches to go past the edge of the text
@@ -497,6 +525,12 @@ int main(int argc, char* argv[])
   matches.resize(haystack.size(), 0);
 
   NeedlesTable table = stringMatchPrecomputeTable(needles, 2 * deviceProp.numRowPerSubarray, deviceProp.isHLayoutDevice);
+  std::cout << "order: \n";
+  print(table.needlesCharsInOrder[0]);
+  std::cout << "ending: \n";
+  print(table.needlesEnding[0]);
+  std::cout << "conversion \n";
+  pv(table.actualToSortedNeedles);
 
   hammingStringMatch(needles, haystack, maxHammingDistance, table, deviceProp.isHLayoutDevice, matches);
 
