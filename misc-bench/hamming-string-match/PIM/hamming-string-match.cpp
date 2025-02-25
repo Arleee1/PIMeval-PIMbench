@@ -89,12 +89,26 @@ struct Params getInputParams(int argc, char **argv)
 
 //! @brief Precomputed list of the needles to match and the order to process the characters
 struct NeedlesTable {
+  using NeedlesTableList = std::vector<std::vector<std::vector<size_t>>>;
+
   //! @brief Defines the order in which to process the characters of all needles
-  std::vector<std::vector<std::vector<size_t>>> needlesCharsInOrder;
+  NeedlesTableList needlesCharsInOrder;
 
   //! @brief Specifies the needles that are ending (out of characters) for each step
-  std::vector<std::vector<std::vector<size_t>>> needlesEnding;
+  NeedlesTableList needlesEnding;
 };
+
+// void printNTLIter(auto& ls) {
+//   for(auto& v : ls) {
+//     if(v.empty()) {
+//       std::cout << "none" << std::endl;
+//     }
+//     for(size_t i=0; auto& e : v) {
+//       std::cout << e << (++i == v.size() ? "\n" : ", ");
+//     }
+//   }
+//   std::cout << std::endl;
+// }
 
 //! @brief  Precomputes a more optimal order to match keys/needles on PIM device for calculation reuse
 //! @details Instead of calling pimNEScalar multiple times for the same character, call only once per character per char index and reuse result
@@ -105,8 +119,11 @@ struct NeedlesTable {
 //! @param[in]  isHorizontal  Represents if the PIM device is horizontal, needed to find the max number of needles per iteration
 //! @return  A table representing a better ordering to match the needles
 NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
+  using NeedlesTableList = std::vector<std::vector<std::vector<size_t>>>;
+  
   NeedlesTable resultTable;
-  std::vector<std::vector<std::vector<size_t>>>& resultTableOrdering = resultTable.needlesCharsInOrder;
+  NeedlesTableList& resultTableOrdering = resultTable.needlesCharsInOrder;
+  NeedlesTableList& resultTableEnding = resultTable.needlesEnding;
   
   // If vertical, each pim object takes 32 rows, 1 row if horizontal
   // Three objects used by haystack, intermediate, and haystack copy
@@ -124,6 +141,7 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
   }
 
   resultTableOrdering.resize(numIterations);
+  resultTableEnding.resize(numIterations);
 
   uint64_t needlesDone = 0;
 
@@ -147,9 +165,16 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
     // Skip checking them by keeping track of the shortest needle that is long enough to have the current character
     uint64_t currentStartNeedle = firstNeedleThisIteration;
     resultTableOrdering[iter].resize(longestNeedleThisIteration);
-    for(uint64_t charInd = 0; charInd < longestNeedleThisIteration; ++charInd) {
+    resultTableEnding[iter].resize(longestNeedleThisIteration);
+    for(uint64_t charInd = 0; /* Check done inside loop*/; ++charInd) {
       while(needles[currentStartNeedle].size() <= charInd) {
+        if(charInd > 0) {
+          resultTableEnding[iter][charInd - 1].push_back(currentStartNeedle);
+        }
         ++currentStartNeedle;
+      }
+      if(charInd == longestNeedleThisIteration) {
+        break;
       }
       std::vector<size_t>& currentTableRow = resultTableOrdering[iter][charInd];
       currentTableRow.resize(1 + lastNeedleThisIteration - currentStartNeedle);
