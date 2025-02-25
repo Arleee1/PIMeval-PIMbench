@@ -169,6 +169,7 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
       });
     }
 
+    // Stores all needles that are ending at this step
     resultTableEnding[iter].resize(longestNeedleThisIteration);
     for(uint64_t needleIdx=firstNeedleThisIteration; needleIdx <= lastNeedleThisIteration; ++needleIdx) {
       resultTableEnding[iter][needles[needleIdx].size() - 1].push_back(needleIdx);
@@ -318,6 +319,15 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         exit(1);
       }
 
+      // This section serves to handle an edge case that can cause matches to go past the edge of the text
+      // For example, let haystack="fga", needles=["abc"], and maxHammingDistance=2
+      // The array representing the number of mismatches for each position will be [3, 3, 2]
+      // This is because the 'a' at the end of the haystack matches the 'a' at the start of the needle
+      // Without this fix, the 2 would be less than or equal to the maximum Hamming distance, and it would match at the end
+      // However, this is a problem, because the match would be off the edge of the text
+      // To solve this, below is an explicit check to elimiate matches that go past the end
+      // This is done by checking that the haystack is not 0, as 0's mean that the haystack has been shifted past that position
+      // The boolean from the previous step is then anded with the binary match array, ensuring that all matches are within bounds
       for(uint64_t needleIdx=0; needleIdx < needlesTableEnding[iter][charIdx].size(); ++needleIdx) {
 
         uint64_t needleIdxHost = needlesTableEnding[iter][charIdx][needleIdx]; // Can be used to index into needles
