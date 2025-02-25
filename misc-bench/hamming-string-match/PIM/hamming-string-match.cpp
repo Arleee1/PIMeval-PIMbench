@@ -98,18 +98,6 @@ struct NeedlesTable {
   NeedlesTableList needlesEnding;
 };
 
-// void printNTLIter(auto& ls) {
-//   for(auto& v : ls) {
-//     if(v.empty()) {
-//       std::cout << "none" << std::endl;
-//     }
-//     for(size_t i=0; auto& e : v) {
-//       std::cout << e << (++i == v.size() ? "\n" : ", ");
-//     }
-//   }
-//   std::cout << std::endl;
-// }
-
 //! @brief  Precomputes a more optimal order to match keys/needles on PIM device for calculation reuse
 //! @details Instead of calling pimNEScalar multiple times for the same character, call only once per character per char index and reuse result
 //!          Orders needles within a character index to place needles with the same character next to each other
@@ -192,12 +180,6 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
   }
 
   return resultTable;
-}
-
-void printPim(PimObjId obj, uint64_t len) {
-  std::vector<int> res(len);
-  pimCopyDeviceToHost(obj, res.data());
-  printVector(res);
 }
 
 //! @brief  Matches strings on a PIM device with an allowed number of character differences
@@ -344,9 +326,6 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         }
         
         uint64_t needleIdxPim = (needleIdxHost - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
-        
-        std::cout << "needle " << needleIdxHost << " ending at char idx: " << charIdx << std::endl;
-        printPim(pimIndividualNeedleMatches[needleIdxPim], haystack.size());
 
         // Checks for matches within maxHammingDistance distance
         // pimIndividualNeedleMatches[needleIdxPim] represents the hamming distance between the needle and the haystack at each position
@@ -356,26 +335,6 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
 
         status = pimAnd(pimIndividualNeedleMatches[needleIdxPim], intermediatePim, pimIndividualNeedleMatches[needleIdxPim]);
         assert (status == PIM_OK);
-
-        // if(isHorizontal) {
-        //   status = pimNEScalar(haystackPim, intermediatePim, (uint64_t) 0);
-        //   assert (status == PIM_OK);
-
-        //   status = pimMul(pimIndividualNeedleMatches[needleIdxPim], intermediatePim, pimIndividualNeedleMatches[needleIdxPim]);
-        //   assert (status == PIM_OK);
-        // } else {
-        //   status = pimEQScalar(haystackPim, intermediatePim, (uint64_t) 0);
-        //   assert (status == PIM_OK);
-
-        //   status = pimSubScalar(intermediatePim, intermediatePim, 1);
-        //   assert (status == PIM_OK);
-
-          
-        // }
-
-        std::cout << "after 0 check " << needleIdxHost << " ending at char idx: " << charIdx << std::endl;
-        printPim(pimIndividualNeedleMatches[needleIdxPim], haystack.size());
-        std::cout << std::endl;
       }
       
       // Shift the haystack to the left to check the next character in it
