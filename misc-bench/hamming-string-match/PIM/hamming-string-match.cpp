@@ -315,6 +315,11 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         assert (status == PIM_OK);
       }
 
+      if(iter >= needlesTableEnding.size() || charIdx >= needlesTableEnding[iter].size()) {
+        std::cerr << "Error: Needles table incorrectly formatted" << std::endl;
+        exit(1);
+      }
+
       for(uint64_t needleIdx=0; needleIdx < needlesTableEnding[iter][charIdx].size(); ++needleIdx) {
 
         uint64_t needleIdxHost = needlesTableEnding[iter][charIdx][needleIdx]; // Can be used to index into needles
