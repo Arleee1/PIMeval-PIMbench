@@ -87,6 +87,15 @@ struct Params getInputParams(int argc, char **argv)
   return p;
 }
 
+//! @brief Precomputed list of the needles to match and the order to process the characters
+struct NeedlesTable {
+  //! @brief Defines the order in which to process the characters of all needles
+  std::vector<std::vector<std::vector<size_t>>> needlesCharsInOrder;
+
+  //! @brief Specifies the needles that are ending (out of characters) for each step
+  std::vector<std::vector<std::vector<size_t>>> needlesEnding;
+};
+
 //! @brief  Precomputes a more optimal order to match keys/needles on PIM device for calculation reuse
 //! @details Instead of calling pimNEScalar multiple times for the same character, call only once per character per char index and reuse result
 //!          Orders needles within a character index to place needles with the same character next to each other
@@ -95,8 +104,9 @@ struct Params getInputParams(int argc, char **argv)
 //! @param[in]  numRows  The number of rows in the PIM device, needed to find the max number of needles per iteration
 //! @param[in]  isHorizontal  Represents if the PIM device is horizontal, needed to find the max number of needles per iteration
 //! @return  A table representing a better ordering to match the needles
-std::vector<std::vector<std::vector<size_t>>> stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
-  std::vector<std::vector<std::vector<size_t>>> resultTable;
+NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
+  NeedlesTable resultTable;
+  std::vector<std::vector<std::vector<size_t>>>& resultTableOrdering = resultTable.needlesCharsInOrder;
   
   // If vertical, each pim object takes 32 rows, 1 row if horizontal
   // Three objects used by haystack, intermediate, and haystack copy
@@ -113,7 +123,7 @@ std::vector<std::vector<std::vector<size_t>>> stringMatchPrecomputeTable(const s
     numIterations = 1 + ((needlesAfterFirstIteration + maxNeedlesPerIteration - 2) / (maxNeedlesPerIteration - 1));
   }
 
-  resultTable.resize(numIterations);
+  resultTableOrdering.resize(numIterations);
 
   uint64_t needlesDone = 0;
 
@@ -136,12 +146,12 @@ std::vector<std::vector<std::vector<size_t>>> stringMatchPrecomputeTable(const s
     // As we iterate through character indices for the needles in this iteration, there may be some needles that are shorter than the current character
     // Skip checking them by keeping track of the shortest needle that is long enough to have the current character
     uint64_t currentStartNeedle = firstNeedleThisIteration;
-    resultTable[iter].resize(longestNeedleThisIteration);
+    resultTableOrdering[iter].resize(longestNeedleThisIteration);
     for(uint64_t charInd = 0; charInd < longestNeedleThisIteration; ++charInd) {
       while(needles[currentStartNeedle].size() <= charInd) {
         ++currentStartNeedle;
       }
-      std::vector<size_t>& currentTableRow = resultTable[iter][charInd];
+      std::vector<size_t>& currentTableRow = resultTableOrdering[iter][charInd];
       currentTableRow.resize(1 + lastNeedleThisIteration - currentStartNeedle);
       // Sort needles [currentStartNeedle, lastNeedleThisIteration] on charInd
       
@@ -166,8 +176,10 @@ std::vector<std::vector<std::vector<size_t>>> stringMatchPrecomputeTable(const s
 //! @param[in]  needlesTable  A pre generated table that defines an efficient way to process the needles, created by stringMatchPrecomputeTable()
 //! @param[in]  isHorizontal  Specifies if the PIM device is horizontal or vertical
 //! @param[out] matches The result, a list of matches of the size of the haystack
-void hammingStringMatch(const std::vector<std::string>& needles, const std::string& haystack, const uint64_t maxHammingDistance, const std::vector<std::vector<std::vector<size_t>>>& needlesTable, const bool isHorizontal, std::vector<int>& matches) {
+void hammingStringMatch(const std::vector<std::string>& needles, const std::string& haystack, const uint64_t maxHammingDistance, const NeedlesTable& needlesTable, const bool isHorizontal, std::vector<int>& matches) {
   PimStatus status;
+
+  const std::vector<std::vector<std::vector<size_t>>>& needlesTableOrdering = needlesTable.needlesCharsInOrder;
 
   // Stores the text that is being checked for the needles
   PimObjId haystackPim = pimAlloc(PIM_ALLOC_AUTO, haystack.size(), PIM_UINT32);
@@ -193,7 +205,7 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
 
   // Haystack copy is only necessary if there is more than one iteration
   PimObjId haystackCopyPim = -1;
-  if(needlesTable.size() > 1) {
+  if(needlesTableOrdering.size() > 1) {
     haystackCopyPim = pimAllocAssociated(haystackPim, PIM_UINT32);
     assert(intermediatePim != -1);
 
@@ -202,15 +214,15 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
   }
   
 
-  if(needlesTable.empty() || needlesTable[0].empty()) {
+  if(needlesTableOrdering.empty() || needlesTableOrdering[0].empty()) {
     std::cerr << "Error: The needles table is empty" << std::endl;
     exit(1);
   }
 
   // Matches are calculated for a group of needles at a time, this vector stores the matches for each needle
   // Each pimIndividualNeedleMatches[i] contains an array of the number of mismatches for a given needle at each position in the haystack
-  // needlesTable[0][0].size() is the number of needles in the first iteration, which will have the most needles out of all iterations
-  size_t maxNeedlesInOneIteration = needlesTable[0][0].size();
+  // needlesTableOrdering[0][0].size() is the number of needles in the first iteration, which will have the most needles out of all iterations
+  size_t maxNeedlesInOneIteration = needlesTableOrdering[0][0].size();
   std::vector<PimObjId> pimIndividualNeedleMatches(maxNeedlesInOneIteration);
   for(size_t i=0; i<maxNeedlesInOneIteration; ++i) {
     pimIndividualNeedleMatches[i] = pimAllocAssociated(haystackPim, PIM_UINT32);
@@ -223,7 +235,7 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
 
   // Number of needles at a time is limited by how many PIM objects can be alloc associated with each other in a subarray
   // Iterates multiple times if there are enough needles
-  for(uint64_t iter=0; iter<needlesTable.size(); ++iter) {
+  for(uint64_t iter=0; iter<needlesTableOrdering.size(); ++iter) {
     // Instead of creating a seperate result variable, we reuse one of the objects in pimIndividualNeedleMatches
     // Can be used as a needle match array for only the first iteration, and a result array for the rest
     // Slight optimization allows one extra needle in the first iteration
@@ -233,7 +245,7 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
     // e.g.: needles = ["abc", "def"]
     // first iteration will process 'a' and 'd'
     // this allows amortization of the pimShiftElementsLeft calls
-    for(uint64_t charIdx=0; charIdx < needlesTable[iter].size(); ++charIdx) {
+    for(uint64_t charIdx=0; charIdx < needlesTableOrdering[iter].size(); ++charIdx) {
 
       // Stores the last character checked using pimNEScalar
       char prevChar = '\0';
@@ -248,9 +260,9 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
       // This optimization is helpful whenver there are multiple copies of the same character in multiple needles at the same index
       // This is more likely to happen when there are a lot of needles/keys
 
-      for(uint64_t needleIdx=0; needleIdx < needlesTable[iter][charIdx].size(); ++needleIdx) {
+      for(uint64_t needleIdx=0; needleIdx < needlesTableOrdering[iter][charIdx].size(); ++needleIdx) {
         
-        uint64_t needleIdxHost = needlesTable[iter][charIdx][needleIdx]; // Can be used to index into needles
+        uint64_t needleIdxHost = needlesTableOrdering[iter][charIdx][needleIdx]; // Can be used to index into needles
         
         if(needles[needleIdxHost].size() <= maxHammingDistance) {
           // This means that the string will match everywhere (except for where it would go off the end)
@@ -284,13 +296,13 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
 
       // Shift the haystack to the left to check the next character in it
       // Only shift if there will be another round of character checks in this iteration
-      if(charIdx + 1 < needlesTable[iter].size()) {
+      if(charIdx + 1 < needlesTableOrdering[iter].size()) {
         status = pimShiftElementsLeft(haystackPim);
         assert (status == PIM_OK);
       }
     }
 
-    for(uint64_t needleIdx = 0; needleIdx < needlesTable[iter][0].size(); ++needleIdx) {
+    for(uint64_t needleIdx = 0; needleIdx < needlesTableOrdering[iter][0].size(); ++needleIdx) {
       uint64_t needleIdxHost = needleIdx + needlesDone; // Can be used to index into needles
       uint64_t needleIdxPim = needleIdx + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
       if(needles[needleIdxHost].size() <= maxHammingDistance) {
@@ -349,14 +361,14 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
     // Update the final result array with the matches from this iteration
     // In the problem statement, we specify that the needle with the highest index should be given as a result if multiple match at the same position
     // Therefore, do a max reduction on the pimIndividualNeedleMatches[needleIdx] objects
-    for(uint64_t needleIdx = 1; needleIdx < needlesTable[iter][0].size() + firstAvailPimNeedleResult; ++needleIdx) {
+    for(uint64_t needleIdx = 1; needleIdx < needlesTableOrdering[iter][0].size() + firstAvailPimNeedleResult; ++needleIdx) {
       status = pimMax(pimIndividualNeedleMatches[0], pimIndividualNeedleMatches[needleIdx], pimIndividualNeedleMatches[0]);
       assert (status == PIM_OK);
     }
 
-    needlesDone += needlesTable[iter][0].size();
+    needlesDone += needlesTableOrdering[iter][0].size();
 
-    if(iter + 1 < needlesTable.size()) {
+    if(iter + 1 < needlesTableOrdering.size()) {
       status = pimCopyObjectToObject(haystackCopyPim, haystackPim);
       assert (status == PIM_OK);
     }
@@ -425,7 +437,7 @@ int main(int argc, char* argv[])
 
   matches.resize(haystack.size(), 0);
 
-  std::vector<std::vector<std::vector<size_t>>> table = stringMatchPrecomputeTable(needles, 2 * deviceProp.numRowPerSubarray, deviceProp.isHLayoutDevice);
+  NeedlesTable table = stringMatchPrecomputeTable(needles, 2 * deviceProp.numRowPerSubarray, deviceProp.isHLayoutDevice);
 
   hammingStringMatch(needles, haystack, maxHammingDistance, table, deviceProp.isHLayoutDevice, matches);
 
