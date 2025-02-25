@@ -108,6 +108,12 @@ struct NeedlesTable {
 //! @return  A table representing a better ordering to match the needles
 NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
   using NeedlesTableList = std::vector<std::vector<std::vector<size_t>>>;
+
+  std::vector<size_t> sortedToActualNeedles(needles.size());
+  std::iota(sortedToActualNeedles.begin(), sortedToActualNeedles.end(), 0);
+  std::sort(sortedToActualNeedles.begin(), sortedToActualNeedles.end(), [&needles](auto l, auto r) {
+    return needles[l].size() < needles[r].size();
+  });
   
   NeedlesTable resultTable;
   NeedlesTableList& resultTableOrdering = resultTable.needlesCharsInOrder;
@@ -148,20 +154,22 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
     // Range: [needlesDone, needlesDone + needlesThisIteration - 1]
     uint64_t firstNeedleThisIteration = needlesDone;
     uint64_t lastNeedleThisIteration = firstNeedleThisIteration + needlesThisIteration - 1;
-    uint64_t longestNeedleThisIteration = needles[lastNeedleThisIteration].size();
+    uint64_t longestNeedleThisIteration = needles[sortedToActualNeedles[lastNeedleThisIteration]].size();
     // As we iterate through character indices for the needles in this iteration, there may be some needles that are shorter than the current character
     // Skip checking them by keeping track of the shortest needle that is long enough to have the current character
     uint64_t currentStartNeedle = firstNeedleThisIteration;
     resultTableOrdering[iter].resize(longestNeedleThisIteration);
     for(uint64_t charInd = 0; charInd < longestNeedleThisIteration; ++charInd) {
-      while(needles[currentStartNeedle].size() <= charInd) {
+      while(needles[sortedToActualNeedles[currentStartNeedle]].size() <= charInd) {
         ++currentStartNeedle;
       }
       std::vector<size_t>& currentTableRow = resultTableOrdering[iter][charInd];
       currentTableRow.resize(1 + lastNeedleThisIteration - currentStartNeedle);
       // Sort needles [currentStartNeedle, lastNeedleThisIteration] on charInd
       
-      std::iota(currentTableRow.begin(), currentTableRow.end(), currentStartNeedle);
+      for(uint64_t currentTableRowIdx=0; currentTableRowIdx<currentTableRow.size(); ++currentTableRowIdx) {
+        currentTableRow[currentTableRowIdx] = sortedToActualNeedles[currentStartNeedle + currentTableRowIdx];
+      }
 
       // Sorting places identical characters next to each other, so their equality results can be reused
       std::sort(currentTableRow.begin(), currentTableRow.end(), [&needles, &charInd](auto& l, auto& r) {
@@ -172,7 +180,8 @@ NeedlesTable stringMatchPrecomputeTable(const std::vector<std::string>& needles,
     // Stores all needles that are ending at this step
     resultTableEnding[iter].resize(longestNeedleThisIteration);
     for(uint64_t needleIdx=firstNeedleThisIteration; needleIdx <= lastNeedleThisIteration; ++needleIdx) {
-      resultTableEnding[iter][needles[needleIdx].size() - 1].push_back(needleIdx);
+      uint64_t actualNeedleIdx = sortedToActualNeedles[needleIdx];
+      resultTableEnding[iter][needles[actualNeedleIdx].size() - 1].push_back(actualNeedleIdx);
     }
 
     needlesDone += needlesThisIteration;
