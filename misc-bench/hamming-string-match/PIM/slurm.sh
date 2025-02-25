@@ -16,7 +16,7 @@
 test_dirs=("$@")
 
 pim_arch_config_prefix="./../../../configs/iiswc"
-pim_arch_configs=("PIMeval_Fulcrum_Rank32.cfg")
+pim_arch_configs=("PIMeval_Bank_Rank32.cfg" "PIMeval_BitSerial_Rank32.cfg" "PIMeval_Fulcrum_Rank32.cfg")
 
 for test_dir in "${test_dirs[@]}"; do
     for config_file in "${pim_arch_configs[@]}"; do
