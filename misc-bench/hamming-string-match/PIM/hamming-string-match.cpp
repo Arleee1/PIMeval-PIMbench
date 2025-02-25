@@ -87,6 +87,20 @@ struct Params getInputParams(int argc, char **argv)
   return p;
 }
 
+void pv(std::vector<std::pair<char, size_t>>& vec) {
+  for(auto elem : vec) {
+    std::cout << "(" << elem.first << ","  << size_t(elem.second) << ") ";
+  }
+  std::cout << std::endl;
+}
+
+void printNeedlesTableIter(std::vector<std::vector<std::pair<char, size_t>>>& table) {
+  for(auto& vec : table) {
+    pv(vec);
+  }
+  std::cout << std::endl << std::endl;
+}
+
 //! @brief  Precomputes a more optimal order to match keys/needles on PIM device for calculation reuse
 //! @details Instead of calling pimNEScalar multiple times for the same character, call only once per character per char index and reuse result
 //!          Orders needles within a character index to place needles with the same character next to each other
@@ -95,8 +109,12 @@ struct Params getInputParams(int argc, char **argv)
 //! @param[in]  numRows  The number of rows in the PIM device, needed to find the max number of needles per iteration
 //! @param[in]  isHorizontal  Represents if the PIM device is horizontal, needed to find the max number of needles per iteration
 //! @return  A table representing a better ordering to match the needles
-std::vector<std::vector<std::vector<size_t>>> stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
-  std::vector<std::vector<std::vector<size_t>>> resultTable;
+std::vector<std::vector<std::vector<std::pair<char, size_t>>>> stringMatchPrecomputeTable(const std::vector<std::string>& needles, const uint64_t numRows, const bool isHorizontal) {
+  // std::cout << "size std::pair<size_t, char>: " << sizeof(std::pair<size_t, char>) << std::endl;
+  // std::cout << "size std::pair<char, size_t>: " << sizeof(std::pair<char, size_t>) << std::endl;
+  // std::cout << "size std::pair<char, char>: " << sizeof(std::pair<char, char>) << std::endl;
+  // std::cout << "size std::pair<size_t, size_t>: " << sizeof(std::pair<size_t, size_t>) << std::endl;
+  std::vector<std::vector<std::vector<std::pair<char, size_t>>>> resultTable;
   
   // If vertical, each pim object takes 32 rows, 1 row if horizontal
   // Three objects used by haystack, intermediate, and haystack copy
@@ -136,22 +154,42 @@ std::vector<std::vector<std::vector<size_t>>> stringMatchPrecomputeTable(const s
     // As we iterate through character indices for the needles in this iteration, there may be some needles that are shorter than the current character
     // Skip checking them by keeping track of the shortest needle that is long enough to have the current character
     uint64_t currentStartNeedle = firstNeedleThisIteration;
-    resultTable[iter].resize(longestNeedleThisIteration);
-    for(uint64_t charInd = 0; charInd < longestNeedleThisIteration; ++charInd) {
+    resultTable[iter].resize(longestNeedleThisIteration + 1);
+    for(uint64_t charInd = 0; charInd < longestNeedleThisIteration + 1; ++charInd) {
+      std::cout << "char ind: " << charInd << std::endl;
+      std::vector<std::pair<char, size_t>>& currentTableRow = resultTable[iter][charInd];
+      uint64_t needlesThisCharInd = 1 + lastNeedleThisIteration - currentStartNeedle;
+      currentTableRow.resize(needlesThisCharInd);
+      uint64_t startNeedleBeforeRemoval = currentStartNeedle;
       while(needles[currentStartNeedle].size() <= charInd) {
+        // std::cout << "add needle: " << currentStartNeedle << " end to table row of char ind: " << charInd << std::endl;
+        std::cout << "negative set table row at " << currentStartNeedle - firstNeedleThisIteration << " to " << currentStartNeedle << std::endl;
+        currentTableRow[currentStartNeedle - startNeedleBeforeRemoval] = {0, currentStartNeedle};
         ++currentStartNeedle;
       }
-      std::vector<size_t>& currentTableRow = resultTable[iter][charInd];
-      currentTableRow.resize(1 + lastNeedleThisIteration - currentStartNeedle);
+      if(currentStartNeedle > lastNeedleThisIteration) {
+        break;
+      }
+      std::cout << "table row for char ind, before iota " << charInd << ": ";
+      pv(currentTableRow);
       // Sort needles [currentStartNeedle, lastNeedleThisIteration] on charInd
-      
-      std::iota(currentTableRow.begin(), currentTableRow.end(), currentStartNeedle);
-
+      // std::iota(currentTableRow.begin(), currentTableRow.end(), currentStartNeedle);
+      for(uint64_t i = currentStartNeedle; i <= lastNeedleThisIteration; ++i) {
+        std::cout << "writing to idx " << i - startNeedleBeforeRemoval << ", table row size: " << currentTableRow.size() << std::endl;
+        std::pair<char, size_t>& elem = currentTableRow[i - startNeedleBeforeRemoval];
+        elem = {needles[i][charInd], i};
+      }
+      std::cout << "table row for char ind " << charInd << ": ";
+      pv(currentTableRow);
       // Sorting places identical characters next to each other, so their equality results can be reused
-      std::sort(currentTableRow.begin(), currentTableRow.end(), [&needles, &charInd](auto& l, auto& r) {
-        return needles[l][charInd] < needles[r][charInd];
-      });
+      // std::sort(currentTableRow.begin(), currentTableRow.end(), [&needles, &charInd](auto& l, auto& r) {
+      //   return needles[l][charInd] < needles[r][charInd];
+      // });
     }
+
+    // for(uint64_t needleIdx : resultTable[iter][longestNeedleThisIteration - 1]) {
+    //   std::cout << "needle in last char idx: " << needleIdx << std::endl;
+    // }
 
     needlesDone += needlesThisIteration;
   }
@@ -425,9 +463,9 @@ int main(int argc, char* argv[])
 
   matches.resize(haystack.size(), 0);
 
-  std::vector<std::vector<std::vector<size_t>>> table = stringMatchPrecomputeTable(needles, 2 * deviceProp.numRowPerSubarray, deviceProp.isHLayoutDevice);
-
-  hammingStringMatch(needles, haystack, maxHammingDistance, table, deviceProp.isHLayoutDevice, matches);
+  std::vector<std::vector<std::vector<std::pair<char, size_t>>>> table = stringMatchPrecomputeTable(needles, 2 * deviceProp.numRowPerSubarray, deviceProp.isHLayoutDevice);
+  printNeedlesTableIter(table[0]);
+  // hammingStringMatch(needles, haystack, maxHammingDistance, table, deviceProp.isHLayoutDevice, matches);
 
   if (params.shouldVerify) 
   {
