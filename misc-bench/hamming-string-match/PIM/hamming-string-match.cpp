@@ -322,7 +322,7 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
           continue;
         }
         
-        uint64_t needleIdxPim = (needleIdxHost - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
+        uint64_t needleIdxPim = (needlesTableActualToSorted[needleIdxHost] - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
         char currentChar = needles[needleIdxHost][charIdx];
 
         if(charIdx == 0) {
@@ -375,7 +375,7 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
           continue;
         }
         
-        uint64_t needleIdxPim = (needleIdxHost - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
+        uint64_t needleIdxPim = (needlesTableActualToSorted[needleIdxHost] - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
 
         // Checks for matches within maxHammingDistance distance
         // pimIndividualNeedleMatches[needleIdxPim] represents the hamming distance between the needle and the haystack at each position
@@ -396,8 +396,8 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
     }
 
     for(uint64_t needleIdx = 0; needleIdx < needlesTableOrdering[iter][0].size(); ++needleIdx) {
-      uint64_t needleIdxHost = needleIdx + needlesDone; // Can be used to index into needles
-      uint64_t needleIdxPim = needleIdx + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
+      uint64_t needleIdxHost = needlesTableOrdering[iter][0][needleIdx]; // Can be used to index into needles
+      uint64_t needleIdxPim = (needlesTableActualToSorted[needleIdxHost] - needlesDone) + firstAvailPimNeedleResult; // Can be used to index into pimIndividualNeedleMatches
       if(needles[needleIdxHost].size() <= maxHammingDistance) {
         // This string matches for all locations [0, haystack.size()-needle.size()]
         // Setup the match array for this string now, because we didn't create it earlier
@@ -525,12 +525,6 @@ int main(int argc, char* argv[])
   matches.resize(haystack.size(), 0);
 
   NeedlesTable table = stringMatchPrecomputeTable(needles, 2 * deviceProp.numRowPerSubarray, deviceProp.isHLayoutDevice);
-  std::cout << "order: \n";
-  print(table.needlesCharsInOrder[0]);
-  std::cout << "ending: \n";
-  print(table.needlesEnding[0]);
-  std::cout << "conversion \n";
-  pv(table.actualToSortedNeedles);
 
   hammingStringMatch(needles, haystack, maxHammingDistance, table, deviceProp.isHLayoutDevice, matches);
 
