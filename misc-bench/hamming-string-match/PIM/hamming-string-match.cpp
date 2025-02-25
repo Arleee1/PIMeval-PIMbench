@@ -101,26 +101,6 @@ struct NeedlesTable {
   std::vector<size_t> actualToSortedNeedles;
 };
 
-void print(std::vector<std::vector<size_t>>& tb) {
-  for(auto& v : tb) {
-    if(v.empty()) {
-      std::cout << "none";
-    }
-    for(auto e : v) {
-      std::cout << e << ", ";
-    }
-    std::cout << std::endl;
-  }
-  std::cout << std::endl;
-}
-
-void pv(std::vector<size_t>& v) {
-  for(auto& e : v) {
-    std::cout << e << ", ";
-  }
-  std::cout << std::endl;
-}
-
 //! @brief  Precomputes a more optimal order to match keys/needles on PIM device for calculation reuse
 //! @details Instead of calling pimNEScalar multiple times for the same character, call only once per character per char index and reuse result
 //!          Orders needles within a character index to place needles with the same character next to each other
