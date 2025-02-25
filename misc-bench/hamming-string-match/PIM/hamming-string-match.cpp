@@ -328,6 +328,11 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         prevChar = currentChar;
       }
 
+      if(!needlesTableEnding[iter][charIdx].empty()) {
+        status = pimNEScalar(haystackPim, intermediatePim, (uint64_t) 0L);
+        assert (status == PIM_OK);
+      }
+
       for(uint64_t needleIdx=0; needleIdx < needlesTableEnding[iter][charIdx].size(); ++needleIdx) {
 
         uint64_t needleIdxHost = needlesTableEnding[iter][charIdx][needleIdx]; // Can be used to index into needles
@@ -347,9 +352,6 @@ void hammingStringMatch(const std::vector<std::string>& needles, const std::stri
         // pimIndividualNeedleMatches[needleIdxPim] represents the hamming distance between the needle and the haystack at each position
         // If pimIndividualNeedleMatches[needleIdxPim][i] <= maxHammingDistance, there is a match at the position
         status = pimLTScalar(pimIndividualNeedleMatches[needleIdxPim], pimIndividualNeedleMatches[needleIdxPim], maxHammingDistance + 1);
-        assert (status == PIM_OK);
-
-        status = pimNEScalar(haystackPim, intermediatePim, (uint64_t) 0);
         assert (status == PIM_OK);
 
         status = pimAnd(pimIndividualNeedleMatches[needleIdxPim], intermediatePim, pimIndividualNeedleMatches[needleIdxPim]);
