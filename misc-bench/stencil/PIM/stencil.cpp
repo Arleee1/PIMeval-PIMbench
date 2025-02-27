@@ -105,20 +105,42 @@ void game_of_life_row(const std::vector<PimObjId> &pim_board, size_t row_idx, Pi
   assert (status == PIM_OK);
 }
 
+// Designed to make it easier to expand to larger stencil areas
+struct PIMStencilRow {
+  PimObjId left;
+  PimObjId mid;
+  PimObjId right;
+
+  void addAll(PimObjId dst) {
+    PimStatus status;
+
+    status = pimAdd(this->left, this->mid, dst);
+    assert (status == PIM_OK);
+    status = pimAdd(dst, this->right, dst);
+    assert (status == PIM_OK);
+  }
+
+  void freeAll() {
+    pimFree(left);
+    pimFree(mid);
+    pimFree(right);
+  }
+};
+
 //! @brief  Adds a vector to the stencil grid, with copies shifted left and right
 //! @tparam  StencilTypeHost  The host datatype for stencil
 //! @tparam  StencilTypePIM  The PIM datatype for stencil
 //! @param[in]  toAdd  The vector to add to the grid
 //! @param[in]  toAssociate  A PIM Object to associate the added data with
-//! @param[out]  pimBoard  The stencil grid to add to
+//! @return  The added rows
 template <typename StencilTypeHost, PimDataType StencilTypePIM>
-void addVectorToGrid(const std::vector<StencilTypeHost> &toAdd, const PimObjId toAssociate, std::vector<PimObjId> &pimBoard) {
+PIMStencilRow addVectorToGrid(const std::vector<StencilTypeHost> &toAdd, const PimObjId toAssociate) {
   PimStatus status;
 
-  PimObjId mid = pimAllocAssociated(toAssociate, StencilTypePIM);
-  assert(mid != -1);
   PimObjId left = pimAllocAssociated(mid, StencilTypePIM);
   assert(left != -1);
+  PimObjId mid = pimAllocAssociated(toAssociate, StencilTypePIM);
+  assert(mid != -1);
   PimObjId right = pimAllocAssociated(mid, StencilTypePIM);
   assert(right != -1);
 
@@ -136,9 +158,7 @@ void addVectorToGrid(const std::vector<StencilTypeHost> &toAdd, const PimObjId t
   status = pimShiftElementsLeft(right);
   assert (status == PIM_OK);
 
-  pimBoard.push_back(left);
-  pimBoard.push_back(mid);
-  pimBoard.push_back(right);
+  return {left, mid, right};
 }
 
 //! @brief  Determines the corresponding PIM datatype from a host datatype
@@ -171,68 +191,54 @@ constexpr PimDataType getPIMTypeFromHostType() {
 
 template <typename StencilTypeHost>
 void stencil(const std::vector<std::vector<StencilTypeHost>> &src_host, std::vector<std::vector<StencilTypeHost>> &dst_host) {
+  PimStatus status;
+  
   constexpr PimDataType StencilTypePIM = getPIMTypeFromHostType<StencilTypeHost>();
-  size_t width = src_host[0].size();
+  
+  assert(!src_host.empty());
+  assert(!src_host[0].empty());
+  assert(src_host.size() == dst_host.size());
+  assert(src_host[0].size() == dst_host[0].size());
+
   size_t height = src_host.size();
+  size_t width = src_host[0].size();
 
-  PimObjId tmp_pim_obj = pimAlloc(PIM_ALLOC_AUTO, width, PIM_UINT8);
-  assert(tmp_pim_obj != -1);
+  PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, PimDataType);
+  assert(resultPim != -1);
 
-  std::vector<PimObjId> pim_board;
-
-  std::vector<uint8_t> tmp_zeros(width, 0);
-  addVectorToGrid<StencilTypeHost, StencilTypePIM>(tmp_zeros, tmp_pim_obj, pim_board);
-
-  for(size_t i=0; i<2; ++i) {
-    addVectorToGrid<StencilTypeHost, StencilTypePIM>(src_host[i], tmp_pim_obj, pim_board);
+  // Stores the stencil rows that are currently being used, at most 3 rows for 3x3 stencil
+  // TODO: Expand to 5x5 stencil
+  constexpr uint64_t numRowsAtOnce = 3; // Must be odd
+  std::vector<PIMStencilRow> pimGrid(numRowsAtOnce);
+  for(size_t i=numRowsAtOnce/2; i<numRowsAtOnce; ++i) {
+    pimGrid[i] = addVectorToGrid<StencilTypeHost, StencilTypePIM>(src_host[i], resultPim);
   }
 
-  std::vector<PimObjId> tmp_sums;
-
-  tmp_sums.push_back(pimAllocAssociated(tmp_pim_obj, PIM_UINT8));
-  tmp_sums.push_back(pimAllocAssociated(tmp_pim_obj, PIM_UINT8));
-  tmp_sums.push_back(pimAllocAssociated(tmp_pim_obj, PIM_UINT8));
-
-  PimStatus status = pimAdd(pim_board[0], pim_board[1], tmp_sums[0]);
-  assert (status == PIM_OK);
-  status = pimAdd(pim_board[2], tmp_sums[0], tmp_sums[0]);
-  assert (status == PIM_OK);
-
-  status = pimAdd(pim_board[3], pim_board[4], tmp_sums[1]);
-  assert (status == PIM_OK);
-  status = pimAdd(pim_board[5], tmp_sums[1], tmp_sums[1]);
-  assert (status == PIM_OK);
-
-  int old_ind = 2;
-
-  PimObjId result_object = pimAllocAssociated(tmp_pim_obj, PIM_UINT8);
-  assert(result_object != -1);
+  PimObjId runningSum = pimAllocAssociated(width, PimDataType);
+  assert(runningSum != -1);
 
   for(size_t i=0; i<height; ++i) {
-    game_of_life_row(pim_board, i+1, tmp_pim_obj, tmp_sums, old_ind, result_object);
-    old_ind = (1+old_ind) % tmp_sums.size();
-    PimStatus copy_status = pimCopyDeviceToHost(result_object, dst_host[i].data());
-    assert (copy_status == PIM_OK);
-    pimFree(pim_board[3*i]);
-    pimFree(pim_board[3*i+1]);
-    pimFree(pim_board[3*i+2]);
-    if(i+2 == height) {
-      addVectorToGrid<StencilTypeHost, StencilTypePIM>(tmp_zeros, tmp_pim_obj, pim_board);
-    } else if(i+2 < height) {
-      addVectorToGrid<StencilTypeHost, StencilTypePIM>(src_host[i+2], tmp_pim_obj, pim_board);
+    status = pimAdd(reuseableSums[numRowsAtOnce/2], reuseableSums[numRowsAtOnce/2 + 1], resultPim);
+    assert (status == PIM_OK);
+
+    for(size_t j=numRowsAtOnce/2 + 2; j<numRowsAtOnce; ++j) {
+      status = pimAdd(resultPim, reuseableSums[j], resultPim);
+      assert (status == PIM_OK);
     }
+
+
   }
 
   pimFree(tmp_pim_obj);
 
-  for(size_t i=pim_board.size()-1; i>=(pim_board.size()-6); --i) {
-    pimFree(pim_board[i]);
+  for(size_t i=pimGrid.size()-1; i>=(pimGrid.size()-6); --i) {
+    pimFree(pimGrid[i]);
   }
 
-  pimFree(result_object);
+  pimFree(resultPim);
 
-  for(size_t i=0; i<tmp_sums.size(); ++i) {
-    pimFree(tmp_sums[i]);
+  for(size_t i=0; i<reuseableSums.size(); ++i) {
+    pimFree(reuseableSums[i]);
   }
 }
 
