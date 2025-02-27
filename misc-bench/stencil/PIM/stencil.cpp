@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <cassert>
 #include <type_traits>
+#include <queue>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -134,31 +135,43 @@ struct PIMStencilRow {
 //! @param[in]  toAssociate  A PIM Object to associate the added data with
 //! @return  The added rows
 template <typename StencilTypeHost, PimDataType StencilTypePIM>
-PIMStencilRow addVectorToGrid(const std::vector<StencilTypeHost> &toAdd, const PimObjId toAssociate) {
+PimObjId sumStencilRow(const std::vector<StencilTypeHost> &src, const PimObjId toAssociate) {
   PimStatus status;
 
-  PimObjId left = pimAllocAssociated(mid, StencilTypePIM);
-  assert(left != -1);
+  PimObjId dst = pimAllocAssociated(toAssociate, StencilTypePIM);
+  assert(dst != -1);
+
   PimObjId mid = pimAllocAssociated(toAssociate, StencilTypePIM);
   assert(mid != -1);
-  PimObjId right = pimAllocAssociated(mid, StencilTypePIM);
-  assert(right != -1);
 
-  status = pimCopyHostToDevice((void *)toAdd.data(), mid);
+  PimObjId other = pimAllocAssociated(toAssociate, StencilTypePIM);
+  assert(other != -1);
+
+  status = pimCopyHostToDevice((void *)src.data(), mid);
   assert (status == PIM_OK);
   
-  status = pimCopyObjectToObject(mid, left);
-  assert (status == PIM_OK);
-  status = pimCopyObjectToObject(mid, right);
+  status = pimCopyObjectToObject(mid, other);
   assert (status == PIM_OK);
 
-
-  status = pimShiftElementsRight(left);
-  assert (status == PIM_OK);
-  status = pimShiftElementsLeft(right);
+  status =  pimShiftElementsRight(other);
   assert (status == PIM_OK);
 
-  return {left, mid, right};
+  status = pimAdd(mid, other, dst);
+  assert (status == PIM_OK);
+
+  status = pimCopyObjectToObject(mid, other);
+  assert (status == PIM_OK);
+
+  status =  pimShiftElementsLeft(other);
+  assert (status == PIM_OK);
+
+  status = pimAdd(dst, other, dst);
+  assert (status == PIM_OK);
+
+  pimFree(mid);
+  pimFree(other);
+
+  return dst;
 }
 
 //! @brief  Determines the corresponding PIM datatype from a host datatype
@@ -190,60 +203,85 @@ constexpr PimDataType getPIMTypeFromHostType() {
 }
 
 template <typename StencilTypeHost>
-void stencil(const std::vector<std::vector<StencilTypeHost>> &src_host, std::vector<std::vector<StencilTypeHost>> &dst_host) {
+void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vector<std::vector<StencilTypeHost>> &dstHost) {
   PimStatus status;
   
   constexpr PimDataType StencilTypePIM = getPIMTypeFromHostType<StencilTypeHost>();
   
-  assert(!src_host.empty());
-  assert(!src_host[0].empty());
-  assert(src_host.size() == dst_host.size());
-  assert(src_host[0].size() == dst_host[0].size());
+  assert(!srcHost.empty());
+  assert(!srcHost[0].empty());
+  assert(srcHost.size() == dstHost.size());
+  assert(srcHost[0].size() == dstHost[0].size());
 
-  size_t height = src_host.size();
-  size_t width = src_host[0].size();
+  size_t height = srcHost.size();
+  size_t width = srcHost[0].size();
 
-  PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, PimDataType);
+  PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, StencilTypePIM);
   assert(resultPim != -1);
 
-  // Stores the stencil rows that are currently being used, at most 3 rows for 3x3 stencil
-  // TODO: Expand to 5x5 stencil
-  constexpr uint64_t numRowsAtOnce = 3; // Must be odd
-  std::vector<PIMStencilRow> pimGrid(numRowsAtOnce);
-  for(size_t i=numRowsAtOnce/2; i<numRowsAtOnce; ++i) {
-    pimGrid[i] = addVectorToGrid<StencilTypeHost, StencilTypePIM>(src_host[i], resultPim);
-  }
+  constexpr uint64_t stencilSize = 3; // Must be odd, and at least 3
+  static_assert(stencilSize % 2 == 1, "Error: Stencil size must be odd, aborting");
+  static_assert(stencilSize >= 3, "Error: Stencil must be at least 3, aborting");
 
-  PimObjId runningSum = pimAllocAssociated(width, PimDataType);
+  PimObjId runningSum = pimAllocAssociated(resultPim, StencilTypePIM);
   assert(runningSum != -1);
 
-  for(size_t i=0; i<height; ++i) {
-    status = pimAdd(reuseableSums[numRowsAtOnce/2], reuseableSums[numRowsAtOnce/2 + 1], resultPim);
+  std::queue<PimObjId> pimGrid;
+
+  PimObjId newRow0 = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[0], resultPim);
+  pimGrid.push(newRow0);
+
+  PimObjId newRow1 = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[1], resultPim);
+  pimGrid.push(newRow1);
+
+  status = pimAdd(newRow0, newRow1, runningSum);
+  assert (status == PIM_OK);
+
+  for(size_t i=2; i<=stencilSize/2; ++i) {
+    PimObjId newRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[i], resultPim);
+    pimGrid.push(newRow);
+
+    status = pimAdd(runningSum, newRow, runningSum);
     assert (status == PIM_OK);
-
-    for(size_t j=numRowsAtOnce/2 + 2; j<numRowsAtOnce; ++j) {
-      status = pimAdd(resultPim, reuseableSums[j], resultPim);
-      assert (status == PIM_OK);
-    }
-
-
   }
 
-  pimFree(tmp_pim_obj);
+  uint64_t nextRowToAdd = stencilSize/2 + 1;
 
-  for(size_t i=pimGrid.size()-1; i>=(pimGrid.size()-6); --i) {
-    pimFree(pimGrid[i]);
+  for(size_t i=0; i<height; ++i) {
+    status = pimDivScalar(runningSum, resultPim, stencilSize*stencilSize);
+    assert (status == PIM_OK);
+
+    status = pimCopyDeviceToHost(resultPim, dstHost[i].data());
+    assert (status == PIM_OK);
+
+    if(nextRowToAdd < height) {
+      PimObjId newRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[nextRowToAdd], resultPim);
+      status = pimAdd(runningSum, newRow, runningSum);
+      assert (status == PIM_OK);
+      pimGrid.push(newRow);
+    }
+    ++nextRowToAdd;
+    if(i+1<height && (pimGrid.size() > stencilSize || nextRowToAdd >= height)) {
+      PimObjId toRemove = pimGrid.front();
+      pimGrid.pop();
+      status = pimSub(runningSum, toRemove, runningSum);
+      assert (status == PIM_OK);
+      pimFree(toRemove);
+    }
   }
 
   pimFree(resultPim);
+  pimFree(runningSum);
 
-  for(size_t i=0; i<reuseableSums.size(); ++i) {
-    pimFree(reuseableSums[i]);
+  while(!pimGrid.empty()) {
+    pimFree(pimGrid.front());
+    pimGrid.pop();
   }
 }
 
-uint8_t get_with_default(size_t i, size_t j, std::vector<std::vector<uint8_t>> &x) {
-  if(i >= 0 && i < x.size() && j >= 0 && j < x[0].size()) {
+template <typename T>
+T get_with_default(int64_t i, int64_t j, std::vector<std::vector<T>> &x) {
+  if(i >= 0 && i < int64_t(x.size()) && j >= 0 && j < int64_t(x[0].size())) {
     return x[i][j];
   }
   return 0;
@@ -251,9 +289,10 @@ uint8_t get_with_default(size_t i, size_t j, std::vector<std::vector<uint8_t>> &
 
 int main(int argc, char* argv[])
 {
+  using StencilTypeHost = int32_t;
   struct Params params = getInputParams(argc, argv);
   std::cout << "Running PIM game of life for board: " << params.width << "x" << params.height << "\n";
-  std::vector<std::vector<uint8_t>> x, y;
+  std::vector<std::vector<StencilTypeHost>> x, y;
   if (params.inputFile == nullptr)
   {
     srand((unsigned)time(NULL));
@@ -262,7 +301,7 @@ int main(int argc, char* argv[])
     for(size_t i=0; i<params.height; ++i) {
       x[i].resize(params.width);
       for(size_t j=0; j<params.width; ++j) {
-        x[i][j] = rand() & 1;
+        x[i][j] = rand() % 1000;
       }
     }
   } 
@@ -284,7 +323,7 @@ int main(int argc, char* argv[])
     y[i].resize(x[0].size());
   }
 
-  stencil<uint8_t>(x, y);
+  stencil(x, y);
 
   if (params.shouldVerify) 
   {
@@ -292,20 +331,13 @@ int main(int argc, char* argv[])
 #pragma omp parallel for
     for(uint64_t i=0; i<y.size(); ++i) {
       for(uint64_t j=0; j<y[0].size(); ++j) {
-        uint8_t sum_cpu = get_with_default(i-1, j-1, x);
-        sum_cpu += get_with_default(i-1, j, x);
-        sum_cpu += get_with_default(i-1, j+1, x);
-        sum_cpu += get_with_default(i, j-1, x);
-        sum_cpu += get_with_default(i, j+1, x);
-        sum_cpu += get_with_default(i+1, j-1, x);
-        sum_cpu += get_with_default(i+1, j, x);
-        sum_cpu += get_with_default(i+1, j+1, x);
-
-        uint8_t res_cpu = (sum_cpu == 3) ? 1 : 0;
-        sum_cpu = (sum_cpu == 2) ? 1 : 0;
-        sum_cpu &= get_with_default(i, j, x);
-        res_cpu |= sum_cpu;
-
+        StencilTypeHost res_cpu = 0;
+        for(int64_t offsetY=-1; offsetY<=1; ++offsetY) {
+          for(int64_t offsetX=-1; offsetX<=1; ++offsetX) {
+            res_cpu += get_with_default(int64_t(i) + offsetY, int64_t(j) + offsetX, x);
+          }
+        }
+        res_cpu /= 9;
         if (res_cpu != y[i][j])
         {
           std::cout << "Wrong answer: " << unsigned(y[i][j]) << " (expected " << unsigned(res_cpu) << ")" << std::endl;
