@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <iomanip>
 #include <cassert>
+#include <type_traits>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -140,9 +141,37 @@ void addVectorToGrid(const std::vector<StencilTypeHost> &toAdd, const PimObjId t
   pimBoard.push_back(right);
 }
 
-void game_of_life(const std::vector<std::vector<uint8_t>> &src_host, std::vector<std::vector<uint8_t>> &dst_host)
-{
+//! @brief  Determines the corresponding PIM datatype from a host datatype
+//! @tparam  StencilTypeHost  The host datatype
+//! @return  The corresponding PIM datatype
+template <typename StencilTypeHost>
+constexpr PimDataType getPIMTypeFromHostType() {
+  if constexpr (std::is_same_v<StencilTypeHost, int8_t>) {
+    return PIM_INT8;
+  } else if constexpr (std::is_same_v<StencilTypeHost, int16_t>) {
+    return PIM_INT16;
+  } else if constexpr (std::is_same_v<StencilTypeHost, int32_t>) {
+    return PIM_INT32;
+  } else if constexpr (std::is_same_v<StencilTypeHost, int64_t>) {
+    return PIM_INT64;
+  } else if constexpr (std::is_same_v<StencilTypeHost, uint8_t>) {
+    return PIM_UINT8;
+  } else if constexpr (std::is_same_v<StencilTypeHost, uint16_t>) {
+    return PIM_UINT16;
+  } else if constexpr (std::is_same_v<StencilTypeHost, uint32_t>) {
+    return PIM_UINT32;
+  } else if constexpr (std::is_same_v<StencilTypeHost, uint64_t>) {
+    return PIM_UINT64;
+  } else {
+    // This will only trigger if StencilTypeHost is not one of the supported types
+    static_assert(!std::is_same_v<StencilTypeHost, StencilTypeHost>, "Error: Unsupported datatype for stencil, aborting");
+    return PIM_INT8; // Still need a return, but it will never be reached
+  }
+}
 
+template <typename StencilTypeHost>
+void stencil(const std::vector<std::vector<StencilTypeHost>> &src_host, std::vector<std::vector<StencilTypeHost>> &dst_host) {
+  constexpr PimDataType StencilTypePIM = getPIMTypeFromHostType<StencilTypeHost>();
   size_t width = src_host[0].size();
   size_t height = src_host.size();
 
@@ -152,10 +181,10 @@ void game_of_life(const std::vector<std::vector<uint8_t>> &src_host, std::vector
   std::vector<PimObjId> pim_board;
 
   std::vector<uint8_t> tmp_zeros(width, 0);
-  addVectorToGrid(tmp_zeros, tmp_pim_obj, pim_board);
+  addVectorToGrid<StencilTypeHost, StencilTypePIM>(tmp_zeros, tmp_pim_obj, pim_board);
 
   for(size_t i=0; i<2; ++i) {
-    addVectorToGrid(src_host[i], tmp_pim_obj, pim_board);
+    addVectorToGrid<StencilTypeHost, StencilTypePIM>(src_host[i], tmp_pim_obj, pim_board);
   }
 
   std::vector<PimObjId> tmp_sums;
@@ -188,9 +217,9 @@ void game_of_life(const std::vector<std::vector<uint8_t>> &src_host, std::vector
     pimFree(pim_board[3*i+1]);
     pimFree(pim_board[3*i+2]);
     if(i+2 == height) {
-      addVectorToGrid(tmp_zeros, tmp_pim_obj, pim_board);
+      addVectorToGrid<StencilTypeHost, StencilTypePIM>(tmp_zeros, tmp_pim_obj, pim_board);
     } else if(i+2 < height) {
-      addVectorToGrid(src_host[i+2], tmp_pim_obj, pim_board);
+      addVectorToGrid<StencilTypeHost, StencilTypePIM>(src_host[i+2], tmp_pim_obj, pim_board);
     }
   }
 
@@ -249,7 +278,7 @@ int main(int argc, char* argv[])
     y[i].resize(x[0].size());
   }
 
-  game_of_life(x, y);
+  stencil<uint8_t>(x, y);
 
   if (params.shouldVerify) 
   {
