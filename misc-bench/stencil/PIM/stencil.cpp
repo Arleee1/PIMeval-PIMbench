@@ -104,32 +104,40 @@ void game_of_life_row(const std::vector<PimObjId> &pim_board, size_t row_idx, Pi
   assert (status == PIM_OK);
 }
 
-void add_vector_to_grid(const std::vector<uint8_t> &to_add, PimObjId to_associate, std::vector<PimObjId> &pim_board) {
+//! @brief  Adds a vector to the stencil grid, with copies shifted left and right
+//! @tparam  StencilTypeHost  The host datatype for stencil
+//! @tparam  StencilTypePIM  The PIM datatype for stencil
+//! @param[in]  toAdd  The vector to add to the grid
+//! @param[in]  toAssociate  A PIM Object to associate the added data with
+//! @param[out]  pimBoard  The stencil grid to add to
+template <typename StencilTypeHost, PimDataType StencilTypePIM>
+void addVectorToGrid(const std::vector<StencilTypeHost> &toAdd, const PimObjId toAssociate, std::vector<PimObjId> &pimBoard) {
+  PimStatus status;
 
-  PimObjId mid = pimAllocAssociated(to_associate, PIM_UINT8);
+  PimObjId mid = pimAllocAssociated(toAssociate, StencilTypePIM);
   assert(mid != -1);
-  PimStatus status = pimCopyHostToDevice((void *)to_add.data(), mid);
-  assert (status == PIM_OK);
-
-  PimObjId left = pimAllocAssociated(mid, PIM_UINT8);
+  PimObjId left = pimAllocAssociated(mid, StencilTypePIM);
   assert(left != -1);
-  status = pimCopyDeviceToDevice(mid, left);
-  assert (status == PIM_OK);
-  status = pimShiftElementsRight(left);
-  assert (status == PIM_OK);
-
-  
-
-  PimObjId right = pimAllocAssociated(mid, PIM_UINT8);
+  PimObjId right = pimAllocAssociated(mid, StencilTypePIM);
   assert(right != -1);
-  status = pimCopyDeviceToDevice(mid, right);
+
+  status = pimCopyHostToDevice((void *)toAdd.data(), mid);
+  assert (status == PIM_OK);
+  
+  status = pimCopyObjectToObject(mid, left);
+  assert (status == PIM_OK);
+  status = pimCopyObjectToObject(mid, right);
+  assert (status == PIM_OK);
+
+
+  status = pimShiftElementsRight(left);
   assert (status == PIM_OK);
   status = pimShiftElementsLeft(right);
   assert (status == PIM_OK);
 
-  pim_board.push_back(left);
-  pim_board.push_back(mid);
-  pim_board.push_back(right);
+  pimBoard.push_back(left);
+  pimBoard.push_back(mid);
+  pimBoard.push_back(right);
 }
 
 void game_of_life(const std::vector<std::vector<uint8_t>> &src_host, std::vector<std::vector<uint8_t>> &dst_host)
@@ -144,10 +152,10 @@ void game_of_life(const std::vector<std::vector<uint8_t>> &src_host, std::vector
   std::vector<PimObjId> pim_board;
 
   std::vector<uint8_t> tmp_zeros(width, 0);
-  add_vector_to_grid(tmp_zeros, tmp_pim_obj, pim_board);
+  addVectorToGrid(tmp_zeros, tmp_pim_obj, pim_board);
 
   for(size_t i=0; i<2; ++i) {
-    add_vector_to_grid(src_host[i], tmp_pim_obj, pim_board);
+    addVectorToGrid(src_host[i], tmp_pim_obj, pim_board);
   }
 
   std::vector<PimObjId> tmp_sums;
@@ -180,9 +188,9 @@ void game_of_life(const std::vector<std::vector<uint8_t>> &src_host, std::vector
     pimFree(pim_board[3*i+1]);
     pimFree(pim_board[3*i+2]);
     if(i+2 == height) {
-      add_vector_to_grid(tmp_zeros, tmp_pim_obj, pim_board);
+      addVectorToGrid(tmp_zeros, tmp_pim_obj, pim_board);
     } else if(i+2 < height) {
-      add_vector_to_grid(src_host[i+2], tmp_pim_obj, pim_board);
+      addVectorToGrid(src_host[i+2], tmp_pim_obj, pim_board);
     }
   }
 
