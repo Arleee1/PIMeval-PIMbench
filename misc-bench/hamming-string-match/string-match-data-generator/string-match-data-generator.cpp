@@ -249,7 +249,7 @@ int main(int argc, char* argv[])
   }
   
   std::string outputFile(params.outputFile);
-  std::string outputDir = "./../dataset-test/" + outputFile;
+  std::string outputDir = "./../dataset/" + outputFile;
   std::string keyOutputFile = outputDir + "/keys.txt";
   std::string textOutputFile = outputDir + "/text.txt";
 

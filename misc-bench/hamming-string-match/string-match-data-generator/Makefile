@@ -12,8 +12,8 @@ ifeq ($(USE_OPENMP),1)
 	CXXFLAGS += -fopenmp
 endif
 
-EXEC := gen.out
-SRC := gen.cpp
+EXEC := string-match-data-generator.out
+SRC := string-match-data-generator.cpp
 
 debug perf dramsim3_integ: $(EXEC)
 
