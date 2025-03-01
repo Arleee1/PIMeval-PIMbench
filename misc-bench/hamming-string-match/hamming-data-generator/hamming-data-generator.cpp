@@ -24,13 +24,14 @@
 
 typedef struct Params
 {
-  char *outputFile;
+  const char *outputFile;
   size_t textLen;
   size_t numKeys;
   size_t minKeyLen;
   size_t maxKeyLen;
   size_t maxHammingDistance;
   uint8_t keyFrequency;
+  bool isHamming;
 } Params;
 
 void usage()
@@ -38,12 +39,12 @@ void usage()
   fprintf(stderr,
           "\nUsage:  ./data-generator.out [options]"
           "\n"
-          "\n    -o    output folder name, stores output in dataset/[name]/text.txt, dataset/[name]/keys.txt, and dataset/[name]/maxHammingDistance.txt (required)"
+          "\n    -o    output folder name, stores output in dataset/[name]/text.txt, dataset/[name]/keys.txt, and, if a hamming distance is provided, dataset/[name]/maxHammingDistance.txt (required)"
           "\n    -l    length of text to match (default=10,000)"
           "\n    -n    number of keys (default=5)"
           "\n    -m    minimum key length (default = 1)"
           "\n    -x    maximum key length (default = 10)"
-          "\n    -d    maximum hamming distance (default = 3)"
+          "\n    -d    maximum hamming distance. If not provided, will not generate maxHammingDistance.txt file. (default = no hamming distance)"
           "\n    -f    approximate frequency of keys in generated text, 0=no matches, 100=all keys (default = 50)"
           "\n");
 }
@@ -56,8 +57,9 @@ struct Params getInputParams(int argc, char **argv)
   p.numKeys = 5;
   p.minKeyLen = 1;
   p.maxKeyLen = 10;
-  p.maxHammingDistance = 3;
+  p.maxHammingDistance = 0;
   p.keyFrequency = 50;
+  p.isHamming = false;
 
   int opt;
   while ((opt = getopt(argc, argv, "h:o:l:n:m:x:d:f:")) >= 0)
@@ -85,6 +87,7 @@ struct Params getInputParams(int argc, char **argv)
       break;
     case 'd':
       p.maxHammingDistance = strtoull(optarg, NULL, 0);
+      p.isHamming = true;
       break;
     case 'f':
       p.keyFrequency = static_cast<uint8_t>(strtoull(optarg, NULL, 0));
@@ -217,8 +220,12 @@ int main(int argc, char* argv[])
   std::mt19937 global_gen(global_rd());
   
   // Replace text with keys, approximately evenly spaced
-  if(textVecOfKeys.size() == 1) {
-    hammingTextReplace(text, 0, keysSorted[0], params.maxHammingDistance, global_gen);
+  if(textVecOfKeys.size() == 1 && keysSorted[0].size() <= text.size()) {
+    if(params.isHamming) {
+      hammingTextReplace(text, 0, keysSorted[0], params.maxHammingDistance, global_gen);
+    } else {
+      text.replace(0, keys[0].size(), keys[0]);
+    }
   } else if(textVecOfKeys.size() > 1) {
     size_t nonKeyCharsInText = params.textLen - textCharsReplacedWithKeys;
     size_t minSpace = nonKeyCharsInText / textVecOfKeys.size();
@@ -227,7 +234,11 @@ int main(int argc, char* argv[])
     size_t textInd = 0;
     for(size_t i=0; i < textVecOfKeys.size(); ++i) {
       std::string& currentKey = keysSorted[textVecOfKeys[i]];
-      hammingTextReplace(text, textInd, currentKey, params.maxHammingDistance, global_gen);
+      if(params.isHamming) {
+        hammingTextReplace(text, textInd, currentKey, params.maxHammingDistance, global_gen);
+      } else {
+        text.replace(textInd, currentKey.size(), currentKey);
+      }
       textInd += currentKey.size();
       textInd += minSpace;
       if(extraSpaces > 0) {
@@ -238,10 +249,9 @@ int main(int argc, char* argv[])
   }
   
   std::string outputFile(params.outputFile);
-  std::string outputDir = "./../dataset/" + outputFile;
+  std::string outputDir = "./../dataset-test/" + outputFile;
   std::string keyOutputFile = outputDir + "/keys.txt";
   std::string textOutputFile = outputDir + "/text.txt";
-  std::string hammingDistanceOutputFile = outputDir + "/maxHammingDistance.txt";
 
   if (!std::filesystem::create_directory(outputDir)) {
     std::cerr << "Error creating output directory, dataset/" << params.outputFile << " may already exist" << std::endl;
@@ -268,10 +278,11 @@ int main(int argc, char* argv[])
     return 1;
   }
 
+  const std::vector<std::string>& keysToWrite = params.isHamming ? keys : keysSorted;
   const std::string newlineChar = "\n";
-  for(size_t i=0; i<keys.size(); ++i) {
-    size_t keyWritten = fwrite(keys[i].c_str(), sizeof(char), keys[i].size(), keysFile);
-    if (keyWritten != keys[i].size()) {
+  for(size_t i=0; i<keysToWrite.size(); ++i) {
+    size_t keyWritten = fwrite(keysToWrite[i].c_str(), sizeof(char), keysToWrite[i].size(), keysFile);
+    if (keyWritten != keysToWrite[i].size()) {
       std::cerr << "Error writing to keys file" << std::endl;
       return 1;
     }
@@ -280,25 +291,31 @@ int main(int argc, char* argv[])
 
   fclose(keysFile);
 
-  std::string hammingDistanceString = std::to_string(params.maxHammingDistance);
+  if(params.isHamming) {
+    std::string hammingDistanceOutputFile = outputDir + "/maxHammingDistance.txt";
+    std::string hammingDistanceString = std::to_string(params.maxHammingDistance);
 
-  FILE* hammingDistanceFile = fopen(hammingDistanceOutputFile.c_str(), "w");
-  if (hammingDistanceFile == nullptr) {
-    std::cerr << "Error opening hamming distance file" << std::endl;
-    return 1;
-  }
+    FILE* hammingDistanceFile = fopen(hammingDistanceOutputFile.c_str(), "w");
+    if (hammingDistanceFile == nullptr) {
+      std::cerr << "Error opening hamming distance file" << std::endl;
+      return 1;
+    }
 
-  size_t hammingDistanceWritten = fwrite(hammingDistanceString.c_str(), sizeof(char), hammingDistanceString.size(), hammingDistanceFile);
-  if (hammingDistanceWritten != hammingDistanceString.size()) {
-    std::cerr << "Error writing to hamming distance file" << std::endl;
-    return 1;
-  }
+    size_t hammingDistanceWritten = fwrite(hammingDistanceString.c_str(), sizeof(char), hammingDistanceString.size(), hammingDistanceFile);
+    if (hammingDistanceWritten != hammingDistanceString.size()) {
+      std::cerr << "Error writing to hamming distance file" << std::endl;
+      return 1;
+    }
 
-  fclose(hammingDistanceFile);
+    fclose(hammingDistanceFile);
 
-  std::cout << "Successfully wrote to dataset/" << params.outputFile << "/keys.txt, dataset/"
+    std::cout << "Successfully wrote to dataset/" << params.outputFile << "/keys.txt, dataset/"
             << params.outputFile << "/text.txt, and dataset/"
             << params.outputFile << "/maxHammingDistance.txt" << std::endl;
+  } else {
+    std::cout << "Successfully wrote to dataset/" << params.outputFile << "/keys.txt and dataset/"
+            << params.outputFile << "/text.txt" << std::endl;
+  }
   
   return 0;
 }
