@@ -278,7 +278,9 @@ int main(int argc, char* argv[])
     return 1;
   }
 
+  // Regular string matching requires keys to be in sorted order
   const std::vector<std::string>& keysToWrite = params.isHamming ? keys : keysSorted;
+
   const std::string newlineChar = "\n";
   for(size_t i=0; i<keysToWrite.size(); ++i) {
     size_t keyWritten = fwrite(keysToWrite[i].c_str(), sizeof(char), keysToWrite[i].size(), keysFile);
