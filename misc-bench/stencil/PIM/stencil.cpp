@@ -198,6 +198,8 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
   PimStatus status;
   
   constexpr PimDataType StencilTypePIM = getPIMTypeFromHostType<StencilTypeHost>();
+
+  const uint64_t stencilArea = stencilHeight * stencilWidth;
   
   assert(!srcHost.empty());
   assert(!srcHost[0].empty());
@@ -209,6 +211,24 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
 
   PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, StencilTypePIM);
   assert(resultPim != -1);
+
+  // Handle special case
+  if(stencilHeight == 1) {
+    for(size_t i=0; i<height; ++i) {
+      PimObjId summedRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[i], stencilWidth, resultPim);
+
+      status = pimDivScalar(summedRow, resultPim, stencilArea);
+      assert (status == PIM_OK);
+
+      status = pimCopyDeviceToHost(resultPim, dstHost[i].data());
+      assert (status == PIM_OK);
+
+      pimFree(summedRow);
+    }
+
+    pimFree(resultPim);
+    return;
+  }
 
   PimObjId runningSum = pimAllocAssociated(resultPim, StencilTypePIM);
   assert(runningSum != -1);
@@ -232,7 +252,6 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
     assert (status == PIM_OK);
   }
 
-  const uint64_t stencilArea = stencilHeight * stencilWidth;
   uint64_t nextRowToAdd = stencilHeight/2 + 1;
 
   for(size_t i=0; i<height; ++i) {
