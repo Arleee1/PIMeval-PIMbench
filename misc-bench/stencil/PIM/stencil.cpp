@@ -298,6 +298,17 @@ int main(int argc, char* argv[])
 {
   using StencilTypeHost = int32_t;
   struct Params params = getInputParams(argc, argv);
+
+  if(params.stencilHeight % 2 == 0) {
+    std::cerr << "Error: Stencil height must be odd, aborting" << std::endl;
+    return 1;
+  }
+
+  if(params.stencilWidth % 2 == 0) {
+    std::cerr << "Error: Stencil width must be odd, aborting" << std::endl;
+    return 1;
+  }
+
   std::cout << "Running PIM stencil for board: " << params.gridWidth << "x" << params.gridHeight << std::endl;
   std::vector<std::vector<StencilTypeHost>> x, y;
   if (params.inputFile == nullptr)
