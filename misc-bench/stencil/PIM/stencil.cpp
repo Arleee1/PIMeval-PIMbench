@@ -299,6 +299,7 @@ T get_with_default(int64_t i, int64_t j, std::vector<std::vector<T>> &x) {
 int main(int argc, char* argv[])
 {
   using StencilTypeHost = int32_t;
+  static_assert(std::is_integral_v<StencilTypeHost>, "Error: Stencil Type must be an integer type");
   struct Params params = getInputParams(argc, argv);
 
   if(params.stencilHeight % 2 == 0) {
@@ -369,12 +370,20 @@ int main(int argc, char* argv[])
             res_cpu += get_with_default(static_cast<int64_t>(i) + offsetY, static_cast<int64_t>(j) + offsetX, x);
           }
         }
-        res_cpu /= stencilArea;
+        if constexpr (std::is_signed_v<StencilTypeHost>) {
+          res_cpu /= static_cast<int64_t>(stencilArea);
+        } else {
+          res_cpu /= static_cast<uint64_t>(stencilArea);
+        }
         if (res_cpu != y[i][j])
         {
           #pragma omp critical
           {
-            std::cout << "Wrong answer: " << unsigned(y[i][j]) << " (expected " << unsigned(res_cpu) << ")" << std::endl;
+            if constexpr (std::is_signed_v<StencilTypeHost>) {
+              std::cout << "Wrong answer: " << static_cast<int64_t>(y[i][j]) << " (expected " << static_cast<int64_t>(res_cpu) << ")" << std::endl;
+            } else {
+              std::cout << "Wrong answer: " << static_cast<uint64_t>(y[i][j]) << " (expected " << static_cast<uint64_t>(res_cpu) << ")" << std::endl;
+            }
             is_correct = false;
           }
         }
