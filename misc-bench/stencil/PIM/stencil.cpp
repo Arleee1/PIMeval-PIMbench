@@ -31,12 +31,12 @@ typedef struct Params
 void usage()
 {
   fprintf(stderr,
-          "\nUsage:  ./game-of-life.out [options]"
+          "\nUsage:  ./stencil.out [options]"
           "\n"
           "\n    -x    board width (default=2048 elements)"
           "\n    -y    board height (default=2048 elements)"
           "\n    -c    dramsim config file"
-          "\n    -i    input file containing a game board (default=generates board with random states)"
+          "\n    -i    input file containing a 2d array (default=random)"
           "\n    -v    t = verifies PIM output with host output. (default=false)"
           "\n");
 }
@@ -81,29 +81,6 @@ struct Params getInputParams(int argc, char **argv)
     }
   }
   return p;
-}
-
-void game_of_life_row(const std::vector<PimObjId> &pim_board, size_t row_idx, PimObjId tmp_pim_obj, const std::vector<PimObjId>& pim_sums, int old_ind, PimObjId result_obj) {
-  size_t mid_idx = 3*row_idx + 1;
-
-  pimAdd(pim_board[mid_idx + 2], pim_board[mid_idx + 3], pim_sums[old_ind]);
-  pimAdd(pim_board[mid_idx + 4], pim_sums[old_ind], pim_sums[old_ind]);
-
-  pimAdd(pim_sums[old_ind], pim_sums[(old_ind + 1) % pim_sums.size()], tmp_pim_obj);
-  pimAdd(pim_board[mid_idx - 1], tmp_pim_obj, tmp_pim_obj);
-  pimAdd(pim_board[mid_idx + 1], tmp_pim_obj, tmp_pim_obj);
-
-  PimStatus status = pimEQScalar(tmp_pim_obj, result_obj, 3);
-  assert (status == PIM_OK);
-
-  status = pimEQScalar(tmp_pim_obj, tmp_pim_obj, 2);
-  assert (status == PIM_OK);
-
-  status = pimAnd(tmp_pim_obj, pim_board[mid_idx], tmp_pim_obj);
-  assert (status == PIM_OK);
-
-  status = pimOr(tmp_pim_obj, result_obj, result_obj);
-  assert (status == PIM_OK);
 }
 
 // Designed to make it easier to expand to larger stencil areas
@@ -291,7 +268,7 @@ int main(int argc, char* argv[])
 {
   using StencilTypeHost = int32_t;
   struct Params params = getInputParams(argc, argv);
-  std::cout << "Running PIM game of life for board: " << params.width << "x" << params.height << "\n";
+  std::cout << "Running PIM stencil for board: " << params.width << "x" << params.height << "\n";
   std::vector<std::vector<StencilTypeHost>> x, y;
   if (params.inputFile == nullptr)
   {
@@ -346,7 +323,7 @@ int main(int argc, char* argv[])
       }
     }
     if(is_correct) {
-      std::cout << "Correct for game of life!" << std::endl;
+      std::cout << "Correct for stencil!" << std::endl;
     }
   }
 
