@@ -266,7 +266,7 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
 
 template <typename T>
 T get_with_default(int64_t i, int64_t j, std::vector<std::vector<T>> &x) {
-  if(i >= 0 && i < int64_t(x.size()) && j >= 0 && j < int64_t(x[0].size())) {
+  if(i >= 0 && i < static_cast<int64_t>(x.size()) && j >= 0 && j < static_cast<int64_t>(x[0].size())) {
     return x[i][j];
   }
   return 0;
@@ -320,7 +320,7 @@ int main(int argc, char* argv[])
         StencilTypeHost res_cpu = 0;
         for(int64_t offsetY=-1; offsetY<=1; ++offsetY) {
           for(int64_t offsetX=-numElementsPerSide; offsetX<=numElementsPerSide; ++offsetX) {
-            res_cpu += get_with_default(int64_t(i) + offsetY, int64_t(j) + offsetX, x);
+            res_cpu += get_with_default(static_cast<int64_t>(i) + offsetY, static_cast<int64_t>(j) + offsetX, x);
           }
         }
         res_cpu /= 9;
