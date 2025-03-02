@@ -21,8 +21,10 @@
 // Params ---------------------------------------------------------------------
 typedef struct Params
 {
-  uint64_t width;
-  uint64_t height;
+  uint64_t gridWidth;
+  uint64_t gridHeight;
+  uint64_t stencilWidth;
+  uint64_t stencilHeight;
   const char *configFile;
   const char *inputFile;
   bool shouldVerify;
@@ -35,6 +37,8 @@ void usage()
           "\n"
           "\n    -x    board width (default=2048 elements)"
           "\n    -y    board height (default=2048 elements)"
+          "\n    -l    vertical stencil size, must be odd (default=3)"
+          "\n    -w    horizontal stencil size, must be odd (default=3)"
           "\n    -c    dramsim config file"
           "\n    -i    input file containing a 2d array (default=random)"
           "\n    -v    t = verifies PIM output with host output. (default=false)"
@@ -44,14 +48,14 @@ void usage()
 struct Params getInputParams(int argc, char **argv)
 {
   struct Params p;
-  p.width = 2048;
-  p.height = 2048;
+  p.gridWidth = 2048;
+  p.gridHeight = 2048;
   p.configFile = nullptr;
   p.inputFile = nullptr;
   p.shouldVerify = false;
 
   int opt;
-  while ((opt = getopt(argc, argv, "h:x:y:c:i:v:")) >= 0)
+  while ((opt = getopt(argc, argv, "h:x:y:l:w:c:i:v:")) >= 0)
   {
     switch (opt)
     {
@@ -60,10 +64,16 @@ struct Params getInputParams(int argc, char **argv)
       exit(0);
       break;
     case 'x':
-      p.width = strtoull(optarg, NULL, 0);
+      p.gridWidth = strtoull(optarg, NULL, 0);
       break;
     case 'y':
-      p.height = strtoull(optarg, NULL, 0);
+      p.gridHeight = strtoull(optarg, NULL, 0);
+      break;
+    case 'l':
+      p.stencilHeight = strtoull(optarg, NULL, 0);
+      break;
+    case 'w':
+      p.stencilWidth = strtoull(optarg, NULL, 0);
       break;
     case 'c':
       p.configFile = optarg;
@@ -82,28 +92,6 @@ struct Params getInputParams(int argc, char **argv)
   }
   return p;
 }
-
-// Designed to make it easier to expand to larger stencil areas
-struct PIMStencilRow {
-  PimObjId left;
-  PimObjId mid;
-  PimObjId right;
-
-  void addAll(PimObjId dst) {
-    PimStatus status;
-
-    status = pimAdd(this->left, this->mid, dst);
-    assert (status == PIM_OK);
-    status = pimAdd(dst, this->right, dst);
-    assert (status == PIM_OK);
-  }
-
-  void freeAll() {
-    pimFree(left);
-    pimFree(mid);
-    pimFree(right);
-  }
-};
 
 //! @brief  Adds a vector to the stencil grid, with copies shifted left and right
 //! @tparam  StencilTypeHost  The host datatype for stencil
@@ -268,16 +256,16 @@ int main(int argc, char* argv[])
 {
   using StencilTypeHost = int32_t;
   struct Params params = getInputParams(argc, argv);
-  std::cout << "Running PIM stencil for board: " << params.width << "x" << params.height << "\n";
+  std::cout << "Running PIM stencil for board: " << params.gridWidth << "x" << params.gridHeight << "\n";
   std::vector<std::vector<StencilTypeHost>> x, y;
   if (params.inputFile == nullptr)
   {
     srand((unsigned)time(NULL));
-    x.resize(params.height);
+    x.resize(params.gridHeight);
 #pragma omp parallel for
-    for(size_t i=0; i<params.height; ++i) {
-      x[i].resize(params.width);
-      for(size_t j=0; j<params.width; ++j) {
+    for(size_t i=0; i<params.gridHeight; ++i) {
+      x[i].resize(params.gridWidth);
+      for(size_t j=0; j<params.gridWidth; ++j) {
         x[i][j] = rand() % 1000;
       }
     }
