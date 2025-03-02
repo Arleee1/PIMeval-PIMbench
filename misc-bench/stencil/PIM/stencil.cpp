@@ -357,39 +357,39 @@ int main(int argc, char* argv[])
 
   if (params.shouldVerify) 
   {
-    bool is_correct = true;
+    bool ok = true;
     const int64_t numElementsPerSide = static_cast<int64_t>(params.stencilWidth >> 1);
     const int64_t numElementsPerTopBot = static_cast<int64_t>(params.stencilHeight >> 1);
     const uint64_t stencilArea = params.stencilHeight * params.stencilWidth;
 #pragma omp parallel for
     for(uint64_t i=0; i<y.size(); ++i) {
       for(uint64_t j=0; j<y[0].size(); ++j) {
-        StencilTypeHost res_cpu = 0;
+        StencilTypeHost resCPU = 0;
         for(int64_t offsetY=-numElementsPerTopBot; offsetY<=numElementsPerTopBot; ++offsetY) {
           for(int64_t offsetX=-numElementsPerSide; offsetX<=numElementsPerSide; ++offsetX) {
-            res_cpu += get_with_default(static_cast<int64_t>(i) + offsetY, static_cast<int64_t>(j) + offsetX, x);
+            resCPU += get_with_default(static_cast<int64_t>(i) + offsetY, static_cast<int64_t>(j) + offsetX, x);
           }
         }
         if constexpr (std::is_signed_v<StencilTypeHost>) {
-          res_cpu /= static_cast<int64_t>(stencilArea);
+          resCPU /= static_cast<int64_t>(stencilArea);
         } else {
-          res_cpu /= static_cast<uint64_t>(stencilArea);
+          resCPU /= static_cast<uint64_t>(stencilArea);
         }
-        if (res_cpu != y[i][j])
+        if (resCPU != y[i][j])
         {
           #pragma omp critical
           {
             if constexpr (std::is_signed_v<StencilTypeHost>) {
-              std::cout << "Wrong answer: " << static_cast<int64_t>(y[i][j]) << " (expected " << static_cast<int64_t>(res_cpu) << ")" << std::endl;
+              std::cout << "Wrong answer: " << static_cast<int64_t>(y[i][j]) << " (expected " << static_cast<int64_t>(resCPU) << ")" << std::endl;
             } else {
-              std::cout << "Wrong answer: " << static_cast<uint64_t>(y[i][j]) << " (expected " << static_cast<uint64_t>(res_cpu) << ")" << std::endl;
+              std::cout << "Wrong answer: " << static_cast<uint64_t>(y[i][j]) << " (expected " << static_cast<uint64_t>(resCPU) << ")" << std::endl;
             }
-            is_correct = false;
+            ok = false;
           }
         }
       }
     }
-    if(is_correct) {
+    if(ok) {
       std::cout << "Correct for stencil!" << std::endl;
     }
   }
