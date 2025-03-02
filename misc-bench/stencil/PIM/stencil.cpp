@@ -186,6 +186,12 @@ constexpr PimDataType getPIMTypeFromHostType() {
   }
 }
 
+//! @brief  Computes the stencil average for a rectangle around each element
+//! @tparam  StencilTypeHost  The host datatype for stencil
+//! @param[in]  srcHost  The stencil grid to average
+//! @param[in]  dstHost  The averaged grid
+//! @param[in]  stencilWidth  The horizontal width of the stencil
+//! @param[in]  stencilHeight  The vertical height of the stencil
 template <typename StencilTypeHost>
 void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vector<std::vector<StencilTypeHost>> &dstHost,
               const uint64_t stencilWidth, const uint64_t stencilHeight) {
