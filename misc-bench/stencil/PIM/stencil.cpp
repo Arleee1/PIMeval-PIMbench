@@ -298,7 +298,7 @@ int main(int argc, char* argv[])
 {
   using StencilTypeHost = int32_t;
   struct Params params = getInputParams(argc, argv);
-  std::cout << "Running PIM stencil for board: " << params.gridWidth << "x" << params.gridHeight << "\n";
+  std::cout << "Running PIM stencil for board: " << params.gridWidth << "x" << params.gridHeight << std::endl;
   std::vector<std::vector<StencilTypeHost>> x, y;
   if (params.inputFile == nullptr)
   {
@@ -350,8 +350,11 @@ int main(int argc, char* argv[])
         res_cpu /= stencilArea;
         if (res_cpu != y[i][j])
         {
-          std::cout << "Wrong answer: " << unsigned(y[i][j]) << " (expected " << unsigned(res_cpu) << ")" << std::endl;
-          is_correct = false;
+          #pragma omp critical
+          {
+            std::cout << "Wrong answer: " << unsigned(y[i][j]) << " (expected " << unsigned(res_cpu) << ")" << std::endl;
+            is_correct = false;
+          }
         }
       }
     }
