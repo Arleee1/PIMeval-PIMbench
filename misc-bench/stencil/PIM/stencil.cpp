@@ -11,6 +11,8 @@
 #include <cassert>
 #include <type_traits>
 #include <queue>
+#include <random>
+#include <limits>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -313,14 +315,23 @@ int main(int argc, char* argv[])
   std::vector<std::vector<StencilTypeHost>> x, y;
   if (params.inputFile == nullptr)
   {
-    srand((unsigned)time(NULL));
     x.resize(params.gridHeight);
-#pragma omp parallel for
-    for(size_t i=0; i<params.gridHeight; ++i) {
+    for(size_t i=0; i<x.size(); ++i) {
       x[i].resize(params.gridWidth);
-      for(size_t j=0; j<params.gridWidth; ++j) {
-        x[i][j] = rand() % 1000;
-      }
+    }
+
+    #pragma omp parallel
+    {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<StencilTypeHost> dist(std::numeric_limits<StencilTypeHost>::min(), std::numeric_limits<StencilTypeHost>::max());
+        
+        #pragma omp for
+        for(size_t i=0; i<params.gridHeight; ++i) {
+          for(size_t j=0; j<params.gridWidth; ++j) {
+            x[i][j] = dist(gen);
+          }
+        }
     }
   } 
   else 
