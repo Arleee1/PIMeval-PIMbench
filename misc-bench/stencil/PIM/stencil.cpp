@@ -313,12 +313,13 @@ int main(int argc, char* argv[])
   if (params.shouldVerify) 
   {
     bool is_correct = true;
+    int64_t numElementsPerSide = static_cast<int64_t>(params.stencilWidth >> 1);
 #pragma omp parallel for
     for(uint64_t i=0; i<y.size(); ++i) {
       for(uint64_t j=0; j<y[0].size(); ++j) {
         StencilTypeHost res_cpu = 0;
         for(int64_t offsetY=-1; offsetY<=1; ++offsetY) {
-          for(int64_t offsetX=-1; offsetX<=1; ++offsetX) {
+          for(int64_t offsetX=-numElementsPerSide; offsetX<=numElementsPerSide; ++offsetX) {
             res_cpu += get_with_default(int64_t(i) + offsetY, int64_t(j) + offsetX, x);
           }
         }
