@@ -23,8 +23,8 @@ typedef struct Params
 {
   uint64_t width;
   uint64_t height;
-  char *configFile;
-  char *inputFile;
+  const char *configFile;
+  const char *inputFile;
   bool shouldVerify;
 } Params;
 
