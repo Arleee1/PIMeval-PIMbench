@@ -210,10 +210,6 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
   PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, StencilTypePIM);
   assert(resultPim != -1);
 
-  constexpr uint64_t stencilSize = 3; // Must be odd, and at least 3
-  static_assert(stencilSize % 2 == 1, "Error: Stencil size must be odd, aborting");
-  static_assert(stencilSize >= 3, "Error: Stencil must be at least 3, aborting");
-
   PimObjId runningSum = pimAllocAssociated(resultPim, StencilTypePIM);
   assert(runningSum != -1);
 
@@ -228,7 +224,7 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
   status = pimAdd(newRow0, newRow1, runningSum);
   assert (status == PIM_OK);
 
-  for(size_t i=2; i<=stencilSize/2; ++i) {
+  for(size_t i=2; i<=stencilHeight/2; ++i) {
     PimObjId newRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[i], stencilWidth, resultPim);
     pimGrid.push(newRow);
 
@@ -236,10 +232,11 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
     assert (status == PIM_OK);
   }
 
-  uint64_t nextRowToAdd = stencilSize/2 + 1;
+  const uint64_t stencilArea = stencilHeight * stencilWidth;
+  uint64_t nextRowToAdd = stencilHeight/2 + 1;
 
   for(size_t i=0; i<height; ++i) {
-    status = pimDivScalar(runningSum, resultPim, stencilSize*stencilSize);
+    status = pimDivScalar(runningSum, resultPim, stencilArea);
     assert (status == PIM_OK);
 
     status = pimCopyDeviceToHost(resultPim, dstHost[i].data());
@@ -252,7 +249,7 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
       pimGrid.push(newRow);
     }
     ++nextRowToAdd;
-    if(i+1<height && (pimGrid.size() > stencilSize || nextRowToAdd >= height)) {
+    if(i+1<height && (pimGrid.size() > stencilHeight || nextRowToAdd >= height)) {
       PimObjId toRemove = pimGrid.front();
       pimGrid.pop();
       status = pimSub(runningSum, toRemove, runningSum);
@@ -319,17 +316,19 @@ int main(int argc, char* argv[])
   if (params.shouldVerify) 
   {
     bool is_correct = true;
-    int64_t numElementsPerSide = static_cast<int64_t>(params.stencilWidth >> 1);
+    const int64_t numElementsPerSide = static_cast<int64_t>(params.stencilWidth >> 1);
+    const int64_t numElementsPerTopBot = static_cast<int64_t>(params.stencilHeight >> 1);
+    const uint64_t stencilArea = params.stencilHeight * params.stencilWidth;
 #pragma omp parallel for
     for(uint64_t i=0; i<y.size(); ++i) {
       for(uint64_t j=0; j<y[0].size(); ++j) {
         StencilTypeHost res_cpu = 0;
-        for(int64_t offsetY=-1; offsetY<=1; ++offsetY) {
+        for(int64_t offsetY=-numElementsPerTopBot; offsetY<=numElementsPerTopBot; ++offsetY) {
           for(int64_t offsetX=-numElementsPerSide; offsetX<=numElementsPerSide; ++offsetX) {
             res_cpu += get_with_default(static_cast<int64_t>(i) + offsetY, static_cast<int64_t>(j) + offsetX, x);
           }
         }
-        res_cpu /= 9;
+        res_cpu /= stencilArea;
         if (res_cpu != y[i][j])
         {
           std::cout << "Wrong answer: " << unsigned(y[i][j]) << " (expected " << unsigned(res_cpu) << ")" << std::endl;
