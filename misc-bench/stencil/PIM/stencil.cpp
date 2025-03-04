@@ -358,7 +358,6 @@ int main(int argc, char* argv[])
 
   // TODO: Check if vector can fit in one iteration. Otherwise need to run in multiple iteration.
   y.resize(x.size());
-#pragma omp parallel for
   for(size_t i=0; i<y.size(); ++i) {
     y[i].resize(x[0].size());
   }
