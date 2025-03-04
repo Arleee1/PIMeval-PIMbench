@@ -13,6 +13,7 @@
 #include <queue>
 #include <random>
 #include <limits>
+#include <algorithm>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -196,7 +197,7 @@ constexpr PimDataType getPIMTypeFromHostType() {
 //! @param[in]  stencilHeight  The vertical height of the stencil
 template <typename StencilTypeHost>
 void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vector<std::vector<StencilTypeHost>> &dstHost,
-              const uint64_t stencilWidth, const uint64_t stencilHeight) {
+             uint64_t stencilWidth, uint64_t stencilHeight) {
   PimStatus status;
   
   constexpr PimDataType StencilTypePIM = getPIMTypeFromHostType<StencilTypeHost>();
@@ -210,6 +211,10 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
 
   size_t height = srcHost.size();
   size_t width = srcHost[0].size();
+
+  // Handle cases when stencil window fully covers grid
+  stencilHeight = std::min(stencilHeight, (height<<1)-1);
+  stencilWidth = std::min(stencilWidth, (width<<1)-1);
 
   PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, StencilTypePIM);
   assert(resultPim != -1);
@@ -246,7 +251,9 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
   status = pimAdd(newRow0, newRow1, runningSum);
   assert (status == PIM_OK);
 
-  for(size_t i=2; i<=stencilHeight/2; ++i) {
+  const uint64_t numElemsTopBot = stencilHeight >> 1;
+
+  for(size_t i=2; i<=numElemsTopBot; ++i) {
     PimObjId newRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[i], stencilWidth, resultPim);
     pimGrid.push(newRow);
 
@@ -254,7 +261,8 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
     assert (status == PIM_OK);
   }
 
-  uint64_t nextRowToAdd = stencilHeight/2 + 1;
+  uint64_t nextRowToAdd = numElemsTopBot + 1;
+  int64_t nextRowToRemove = -static_cast<int64_t>(nextRowToAdd) + 1;
 
   for(size_t i=0; i<height; ++i) {
     status = pimDivScalar(runningSum, resultPim, stencilArea);
@@ -270,13 +278,15 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
       pimGrid.push(newRow);
     }
     ++nextRowToAdd;
-    if(i+1<height && (pimGrid.size() > stencilHeight || nextRowToAdd >= height)) {
+
+    if(nextRowToRemove >= 0) {
       PimObjId toRemove = pimGrid.front();
       pimGrid.pop();
       status = pimSub(runningSum, toRemove, runningSum);
       assert (status == PIM_OK);
       pimFree(toRemove);
     }
+    ++nextRowToRemove;
   }
 
   pimFree(resultPim);
