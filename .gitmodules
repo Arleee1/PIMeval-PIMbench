@@ -5,3 +5,6 @@
 	path = misc-bench/string-match/baselines/GPU/PFAC
 	url = https://github.com/Arleee1/PFAC.git
 	branch = pimeval_pimbench_pfac_fork
+[submodule "misc-bench/stencil/baselines/GPU/cuSten"]
+	path = misc-bench/stencil/baselines/GPU/cuSten
+	url = https://github.com/Arleee1/cuSten
