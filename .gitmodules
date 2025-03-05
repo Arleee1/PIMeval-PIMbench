@@ -8,3 +8,4 @@
 [submodule "misc-bench/stencil/baselines/GPU/cuSten"]
 	path = misc-bench/stencil/baselines/GPU/cuSten
 	url = https://github.com/Arleee1/cuSten
+	branch = pimeval_pimbench_custen_fork
