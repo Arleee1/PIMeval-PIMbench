@@ -203,19 +203,22 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   uint64_t nextRowToAdd = stencilHeight-1;
 
   for(uint64_t row=numAbove; row<gridHeight-numBelow; ++row) {
-    status = pimBroadcastFP(resultPim, 0.0f);
-    assert (status == PIM_OK);
     shiftedRows.push_back(createShiftedStencilRows(srcHost[nextRowToAdd], stencilWidth, numLeft, resultPim));
     ++nextRowToAdd;
 
     uint64_t stencilY = 0;
     for(std::vector<PimObjId> &shiftedRow : shiftedRows) {
       for(uint64_t stencilX = 0; stencilX < stencilWidth; ++stencilX) {
-        status = pimMulScalar(shiftedRow[stencilX], tempPim, stencilPatternConverted[stencilY][stencilX]);
-        assert (status == PIM_OK);
+        if(stencilY == 0 && stencilX == 0) {
+          status = pimMulScalar(shiftedRow[stencilX], resultPim, stencilPatternConverted[stencilY][stencilX]);
+          assert (status == PIM_OK);
+        } else {
+          status = pimMulScalar(shiftedRow[stencilX], tempPim, stencilPatternConverted[stencilY][stencilX]);
+          assert (status == PIM_OK);
 
-        status = pimAdd(resultPim, tempPim, resultPim);
-        assert (status == PIM_OK);
+          status = pimAdd(resultPim, tempPim, resultPim);
+          assert (status == PIM_OK);
+        }
       }
       ++stencilY;
     }
