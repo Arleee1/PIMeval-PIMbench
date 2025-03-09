@@ -15,6 +15,7 @@
 #include <limits>
 #include <algorithm>
 #include <list>
+#include <cstring>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -198,40 +199,64 @@ void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vect
   const uint64_t stencilWidth = stencilPattern[0].size();
   const uint64_t numRight = stencilWidth - numLeft - 1;
   const uint64_t numBelow = stencilHeight - numAbove - 1;
+  
+  // PIM API only supports passing scalar values through uint64_t
+  const std::vector<std::vector<uint64_t>> stencilPatternConverted(stencilHeight);
+  for(uint64_t y=0; y<stencilHeight; ++y) {
+    stencilPatternConverted[y].resize(stencilWidth);
+    for(uint64_t x=0; x<stencilWidth; ++x) {
+      uint32_t tmp;
+      std::memcpy(&tmp, &stencilPattern[y][x], sizeof(float));
+      stencilPatternConverted[y][x] = static_cast<uint64_t>(tmp);
+    }
+  }
 
   PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, gridWidth, StencilTypePIM);
   assert(resultPim != -1);
 
+  PimObjId tempPim = pimAllocAssociated(resultPim, StencilTypePIM);
+  assert(tempPim != -1);
+
   std::list<std::vector<PimObjId>> shiftedRows;
 
-  for(uint64_t i=0; i<numBelow; ++i) {
+  for(uint64_t i=0; i<stencilHeight-1; ++i) {
     shiftedRows.push_back(createShiftedStencilRows(srcHost[i], stencilWidth, numLeft, resultPim));
   }
 
-  uint64_t nextRowToAdd = numBelow;
-  int64_t nextRowToRemove = -static_cast<int64_t>(numAbove);
+  uint64_t nextRowToRemove = 0;
+  uint64_t nextRowToAdd = stencilHeight-1;
 
-  for(uint64_t row=0; row<gridHeight; ++row) {
-    if(nextRowToAdd < stencilHeight) {
-      shiftedRows.push_back(createShiftedStencilRows(srcHost[nextRowToAdd], stencilWidth, numLeft, resultPim));
-      ++nextRowToAdd;
-    }
+  for(uint64_t row=numAbove; row<gridHeight-numBelow; ++row) {
+    shiftedRows.push_back(createShiftedStencilRows(srcHost[nextRowToAdd], stencilWidth, numLeft, resultPim));
+    ++nextRowToAdd;
 
-    // TODO: non periodic stencil shouldn't worry about values at boundaries where there isn't complete data
-    // So only compute rows where the stencil is fully in frame
-    const uint64_t firstRowInStencil = row >= numAbove ? 0 : numAbove - row;
-    const uint64_t lastRowInStencil = row+numBelow < gridHeight ? stencilHeight : stencilHeight - (numBelow - (gridHeight - row - 1));
-    for(uint64_t stencilY = firstRowInStencil; stencilY < lastRowInStencil; ++stencilY) {
+    uint64_t stencilY = 0;
+    for(std::vector<PimObjId> &shiftedRow : shiftedRows) {
+      for(uint64_t stencilX = 0; stencilX < stencilWidth; ++stencilX) {
+        status = pimMulScalar(shiftedRow[stencilX], tempPim, stencilPatternConverted[stencilY][stencilX]);
+        assert (status == PIM_OK);
 
-    }
-    
-    if(nextRowToRemove >= 0) {
-      for(PimObjId objToFree : shiftedRows.front()) {
-        pimFree(objToFree);
+        status = pimAdd(resultPim, tempPim, resultPim);
+        assert (status == PIM_OK);
       }
-      shiftedRows.pop_front();
+      ++stencilY;
     }
+
+    status = pimCopyDeviceToHost(resultPim, (void *) dstHost[row].data());
+    assert (status == PIM_OK);
+    
+    for(PimObjId objToFree : shiftedRows.front()) {
+      pimFree(objToFree);
+    }
+    shiftedRows.pop_front();
     ++nextRowToRemove;
+  }
+
+  while(!shiftedRows.empty()) {
+    for(PimObjId objToFree : shiftedRows.front()) {
+      pimFree(objToFree);
+    }
+    shiftedRows.pop_front();
   }
 }
 
