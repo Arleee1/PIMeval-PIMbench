@@ -42,8 +42,8 @@ void usage()
   fprintf(stderr,
           "\nUsage:  ./stencil.out [options]"
           "\n"
-          "\n    -x    board width (default=2048 elements)"
-          "\n    -y    board height (default=2048 elements)"
+          "\n    -x    grid width (default=2048 elements)"
+          "\n    -y    grid height (default=2048 elements)"
           "\n    -w    horizontal stencil size (default=3)"
           "\n    -d    vertical stencil size (default=3)"
           "\n    -l    number of elements to the left of the output element for the stencil pattern, must be less than the horizontal stencil size (default=1)"
@@ -68,7 +68,7 @@ struct Params getInputParams(int argc, char **argv)
   p.shouldVerify = false;
 
   int opt;
-  while ((opt = getopt(argc, argv, "h:x:y:l:w:a:b:c:i:v:")) >= 0)
+  while ((opt = getopt(argc, argv, "h:x:y:w:d:l:a:c:i:v:")) >= 0)
   {
     switch (opt)
     {
@@ -82,16 +82,16 @@ struct Params getInputParams(int argc, char **argv)
     case 'y':
       p.gridHeight = strtoull(optarg, NULL, 0);
       break;
-    case 'l':
-      p.stencilHeight = strtoull(optarg, NULL, 0);
-      break;
     case 'w':
       p.stencilWidth = strtoull(optarg, NULL, 0);
       break;
-    case 'a':
+    case 'd':
+      p.stencilHeight = strtoull(optarg, NULL, 0);
+      break;
+    case 'l':
       p.numLeft = strtoull(optarg, NULL, 0);
       break;
-    case 'b':
+    case 'a':
       p.numAbove = strtoull(optarg, NULL, 0);
       break;
     case 'c':
@@ -101,7 +101,7 @@ struct Params getInputParams(int argc, char **argv)
       p.inputFile = optarg;
       break;
     case 'v':
-      p.shouldVerify = (*optarg == 't') ? true : false;
+      p.shouldVerify = (*optarg == 't');
       break;
     default:
       fprintf(stderr, "\nUnrecognized option!\n");
