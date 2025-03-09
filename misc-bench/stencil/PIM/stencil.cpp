@@ -136,7 +136,7 @@ std::vector<PimObjId> createShiftedStencilRows(const std::vector<float> &src, co
     status = pimCopyObjectToObject(result[i], result[i-1]);
     assert (status == PIM_OK);
 
-    status = pimShiftElementsLeft(result[i-1]);
+    status = pimShiftElementsRight(result[i-1]);
     assert (status == PIM_OK);
   }
 
@@ -174,7 +174,6 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   const uint64_t gridWidth = srcHost[0].size();
   const uint64_t stencilHeight = stencilPattern.size();
   const uint64_t stencilWidth = stencilPattern[0].size();
-  const uint64_t numRight = stencilWidth - numLeft - 1;
   const uint64_t numBelow = stencilHeight - numAbove - 1;
   
   // PIM API only supports passing scalar values through uint64_t
@@ -204,6 +203,8 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   uint64_t nextRowToAdd = stencilHeight-1;
 
   for(uint64_t row=numAbove; row<gridHeight-numBelow; ++row) {
+    status = pimBroadcastFP(resultPim, 0.0f);
+    assert (status == PIM_OK);
     shiftedRows.push_back(createShiftedStencilRows(srcHost[nextRowToAdd], stencilWidth, numLeft, resultPim));
     ++nextRowToAdd;
 
@@ -322,7 +323,7 @@ int main(int argc, char* argv[])
       for(uint64_t gridX=startX; gridX<endX; ++gridX) {
         float resCPU = 0.0f;
         for(uint64_t stencilY=0; stencilY<params.stencilHeight; ++stencilY) {
-          for(int64_t stencilX=0; stencilX<params.stencilWidth; ++stencilX) {
+          for(uint64_t stencilX=0; stencilX<params.stencilWidth; ++stencilX) {
             resCPU += stencilPattern[stencilY][stencilX] * x[gridY + stencilY - params.numAbove][gridX + stencilX - params.numLeft];
           }
         }
