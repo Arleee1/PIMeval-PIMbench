@@ -14,6 +14,7 @@
 #include <random>
 #include <limits>
 #include <algorithm>
+#include <list>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
@@ -106,59 +107,37 @@ struct Params getInputParams(int argc, char **argv)
 //! @param[in]  toAssociate  A PIM Object to associate the added data with
 //! @return  The sumed PIM row
 template <typename StencilTypeHost, PimDataType StencilTypePIM>
-PimObjId sumStencilRow(const std::vector<StencilTypeHost> &src, const uint64_t stencilWidth, const PimObjId toAssociate) {
-  const uint64_t numElementsEachSide = stencilWidth >> 1;
-  
+std::vector<PimObjId> createShiftedStencilRows(const std::vector<StencilTypeHost> &src, const uint64_t stencilWidth,
+                                               const uint64_t numLeft, const PimObjId toAssociate) {
   PimStatus status;
 
-  PimObjId mid = pimAllocAssociated(toAssociate, StencilTypePIM);
-  assert(mid != -1);
+  std::vector<PimObjId> result(stencilWidth);
 
-  status = pimCopyHostToDevice((void *)src.data(), mid);
-  assert (status == PIM_OK);  
-
-  if(numElementsEachSide == 0) {
-    return mid;
+  for(uint64_t i=0; i<result.size(); ++i) {
+    result[i] = pimAllocAssociated(toAssociate, StencilTypePIM);
+    assert(result[i] != -1);
   }
 
-  PimObjId dst = pimAllocAssociated(toAssociate, StencilTypePIM);
-  assert(dst != -1);
-
-  PimObjId other = pimAllocAssociated(toAssociate, StencilTypePIM);
-  assert(other != -1);
-  
-  status = pimCopyObjectToObject(mid, other);
+  status = pimCopyHostToDevice((void *)src.data(), result[numLeft]);
   assert (status == PIM_OK);
 
-  status =  pimShiftElementsRight(other);
-  assert (status == PIM_OK);
-
-  status = pimAdd(mid, other, dst);
-  assert (status == PIM_OK);
-
-  for(uint64_t shiftIter=1; shiftIter<numElementsEachSide; ++shiftIter) {
-    status =  pimShiftElementsRight(other);
+  for(uint64_t i=numLeft; i>0; --i) {
+    status = pimCopyObjectToObject(result[i], result[i-1]);
     assert (status == PIM_OK);
 
-    status = pimAdd(dst, other, dst);
+    status = pimShiftElementsLeft(result[i-1]);
     assert (status == PIM_OK);
   }
 
-  status = pimCopyObjectToObject(mid, other);
-  assert (status == PIM_OK);
-
-  for(uint64_t shiftIter=0; shiftIter<numElementsEachSide; ++shiftIter) {
-    status =  pimShiftElementsLeft(other);
+  for(uint64_t i=numLeft+1; i<result.size(); ++i) {
+    status = pimCopyObjectToObject(result[i-1], result[i]);
     assert (status == PIM_OK);
 
-    status = pimAdd(dst, other, dst);
+    status = pimShiftElementsLeft(result[i]);
     assert (status == PIM_OK);
   }
 
-  pimFree(mid);
-  pimFree(other);
-
-  return dst;
+  return result;
 }
 
 //! @brief  Determines the corresponding PIM datatype from a host datatype
@@ -189,112 +168,70 @@ constexpr PimDataType getPIMTypeFromHostType() {
   }
 }
 
-//! @brief  Computes the stencil average for a rectangle around each element
+//! @brief  Computes a stencil pattern over a 2d array
 //! @tparam  StencilTypeHost  The host datatype for stencil
-//! @param[in]  srcHost  The stencil grid to average
-//! @param[in]  dstHost  The averaged grid
-//! @param[in]  stencilWidth  The horizontal width of the stencil
-//! @param[in]  stencilHeight  The vertical height of the stencil
+//! @param[in]  srcHost  The input stencil grid
+//! @param[in]  dstHost  The resultant stencil grid
+//! @param[in]  stencilPattern  The stencil pattern to apply
+//! @param[in]  numLeft  The number of elements to the left of the output element in the stencil pattern
+//! @param[in]  numAbove  The number of elements above the output element in the stencil pattern
 template <typename StencilTypeHost>
 void stencil(const std::vector<std::vector<StencilTypeHost>> &srcHost, std::vector<std::vector<StencilTypeHost>> &dstHost,
-             uint64_t stencilWidth, uint64_t stencilHeight) {
+             const std::vector<std::vector<StencilTypeHost>> &stencilPattern, const uint64_t numLeft, const uint64_t numAbove) {
   PimStatus status;
   
   constexpr PimDataType StencilTypePIM = getPIMTypeFromHostType<StencilTypeHost>();
-
-  const uint64_t stencilArea = stencilHeight * stencilWidth;
   
   assert(!srcHost.empty());
   assert(!srcHost[0].empty());
   assert(srcHost.size() == dstHost.size());
   assert(srcHost[0].size() == dstHost[0].size());
+  assert(!stencilPattern.empty());
+  assert(!stencilPattern[0].empty());
+  assert(stencilPattern.size() > numAbove);
+  assert(stencilPattern[0].size() > numLeft);
 
-  size_t height = srcHost.size();
-  size_t width = srcHost[0].size();
+  constexpr uint64_t bitsPerElement = 32;
+  const uint64_t gridHeight = srcHost.size();
+  const uint64_t gridWidth = srcHost[0].size();
+  const uint64_t stencilHeight = stencilPattern.size();
+  const uint64_t stencilWidth = stencilPattern[0].size();
+  const uint64_t numRight = stencilWidth - numLeft - 1;
+  const uint64_t numBelow = stencilHeight - numAbove - 1;
 
-  // Handle cases when stencil window fully covers grid
-  stencilHeight = std::min(stencilHeight, (height<<1)-1);
-  stencilWidth = std::min(stencilWidth, (width<<1)-1);
-
-  PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, width, StencilTypePIM);
+  PimObjId resultPim = pimAlloc(PIM_ALLOC_AUTO, gridWidth, StencilTypePIM);
   assert(resultPim != -1);
 
-  // Handle special case
-  if(stencilHeight == 1) {
-    for(size_t i=0; i<height; ++i) {
-      PimObjId summedRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[i], stencilWidth, resultPim);
+  std::list<std::vector<PimObjId>> shiftedRows;
 
-      status = pimDivScalar(summedRow, resultPim, stencilArea);
-      assert (status == PIM_OK);
-
-      status = pimCopyDeviceToHost(resultPim, dstHost[i].data());
-      assert (status == PIM_OK);
-
-      pimFree(summedRow);
-    }
-
-    pimFree(resultPim);
-    return;
+  for(uint64_t i=0; i<numBelow; ++i) {
+    shiftedRows.push_back(createShiftedStencilRows(srcHost[i], stencilWidth, numLeft, resultPim));
   }
 
-  PimObjId runningSum = pimAllocAssociated(resultPim, StencilTypePIM);
-  assert(runningSum != -1);
+  uint64_t nextRowToAdd = numBelow;
+  int64_t nextRowToRemove = -static_cast<int64_t>(numAbove);
 
-  std::queue<PimObjId> pimGrid;
-
-  PimObjId newRow0 = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[0], stencilWidth, resultPim);
-  pimGrid.push(newRow0);
-
-  PimObjId newRow1 = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[1], stencilWidth, resultPim);
-  pimGrid.push(newRow1);
-
-  status = pimAdd(newRow0, newRow1, runningSum);
-  assert (status == PIM_OK);
-
-  const uint64_t numElemsTopBot = stencilHeight >> 1;
-
-  for(size_t i=2; i<=numElemsTopBot; ++i) {
-    PimObjId newRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[i], stencilWidth, resultPim);
-    pimGrid.push(newRow);
-
-    status = pimAdd(runningSum, newRow, runningSum);
-    assert (status == PIM_OK);
-  }
-
-  uint64_t nextRowToAdd = numElemsTopBot + 1;
-  int64_t nextRowToRemove = -static_cast<int64_t>(nextRowToAdd) + 1;
-
-  for(size_t i=0; i<height; ++i) {
-    status = pimDivScalar(runningSum, resultPim, stencilArea);
-    assert (status == PIM_OK);
-
-    status = pimCopyDeviceToHost(resultPim, dstHost[i].data());
-    assert (status == PIM_OK);
-
-    if(nextRowToAdd < height) {
-      PimObjId newRow = sumStencilRow<StencilTypeHost, StencilTypePIM>(srcHost[nextRowToAdd], stencilWidth, resultPim);
-      status = pimAdd(runningSum, newRow, runningSum);
-      assert (status == PIM_OK);
-      pimGrid.push(newRow);
+  for(uint64_t row=0; row<gridHeight; ++row) {
+    if(nextRowToAdd < stencilHeight) {
+      shiftedRows.push_back(createShiftedStencilRows(srcHost[nextRowToAdd], stencilWidth, numLeft, resultPim));
+      ++nextRowToAdd;
     }
-    ++nextRowToAdd;
 
+    // TODO: non periodic stencil shouldn't worry about values at boundaries where there isn't complete data
+    // So only compute rows where the stencil is fully in frame
+    const uint64_t firstRowInStencil = row >= numAbove ? 0 : numAbove - row;
+    const uint64_t lastRowInStencil = row+numBelow < gridHeight ? stencilHeight : stencilHeight - (numBelow - (gridHeight - row - 1));
+    for(uint64_t stencilY = firstRowInStencil; stencilY < lastRowInStencil; ++stencilY) {
+
+    }
+    
     if(nextRowToRemove >= 0) {
-      PimObjId toRemove = pimGrid.front();
-      pimGrid.pop();
-      status = pimSub(runningSum, toRemove, runningSum);
-      assert (status == PIM_OK);
-      pimFree(toRemove);
+      for(PimObjId objToFree : shiftedRows.front()) {
+        pimFree(objToFree);
+      }
+      shiftedRows.pop_front();
     }
     ++nextRowToRemove;
-  }
-
-  pimFree(resultPim);
-  pimFree(runningSum);
-
-  while(!pimGrid.empty()) {
-    pimFree(pimGrid.front());
-    pimGrid.pop();
   }
 }
 
