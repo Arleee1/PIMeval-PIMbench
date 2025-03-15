@@ -8,7 +8,6 @@ NVCC := nvcc
 CUDA_DIR ?= $(shell dirname $(shell dirname $(shell which nvcc)))
 CUDA_INCLUDE := $(CUDA_DIR)/include
 CUDA_LIB_DIR := $(CUDA_DIR)/lib64
-FOPENMP := -Xcompiler -fopenmp
 
 ARCH := sm_80
 ARCH_FLAG := -arch=$(ARCH)
@@ -28,6 +27,12 @@ cuSten_FLAGS := -I$(cuSten_ROOT) -L$(cuSten_LIB_DIR) -lcuSten
 # Compiler flags
 CFLAGS := -O3
 CXXFLAGS := -std=c++17
+
+# make USE_OPENMP=1
+USE_OPENMP ?= 0
+ifeq ($(USE_OPENMP),1)
+	CXXFLAGS += -Xcompiler -fopenmp
+endif
 
 # Default target
 all: $(EXEC)
