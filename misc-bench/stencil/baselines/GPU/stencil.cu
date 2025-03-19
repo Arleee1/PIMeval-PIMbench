@@ -140,8 +140,8 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
 
   constexpr int deviceNumber = 0;
   constexpr int tilesNumber = 4;
-  constexpr int blockX = 4;
-  constexpr int blockY = 4;
+  constexpr int blockX = 32;
+  constexpr int blockY = 32;
 
   // cuSten library expects managed memory
   // TODO: Check if this impacts benchmark time
@@ -159,6 +159,7 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   for(uint64_t gridY=0; gridY<gridHeight; ++gridY) {
     for(uint64_t gridX=0; gridX<gridWidth; ++gridX) {
       gridInput[gridY * gridWidth + gridX] = srcHost[gridY][gridX];
+      gridOutput[gridY * gridWidth + gridX] = -1.f;
     }
   }
 
@@ -295,7 +296,7 @@ int main(int argc, char* argv[])
         {
           #pragma omp critical
           {
-            std::cout << std::fixed << std::setprecision(3) << "Wrong answer: " << y[gridY][gridX] << " (expected " << resCPU << ")" << std::endl;
+            std::cout << std::fixed << std::setprecision(3) << "Wrong answer: " << y[gridY][gridX] << " (expected " << resCPU << ") at position " << gridX << ", " << gridY << std::endl;
             ok = false;
           }
         }
