@@ -209,7 +209,13 @@ void stencil(
   dim3 dimBlock(32, 32);
   // Only compute grid cells where the stencil pattern is fully in range
   dim3 dimGrid((gridWidth - stencilWidth + dimBlock.x) / dimBlock.x, (gridHeight - stencilHeight + dimBlock.y) / dimBlock.y);
-  
+
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  float timeElapsed = 0;
+
+  cudaEventRecord(start, 0);
   rectangleStencilAverage<<<dimGrid, dimBlock>>>(
     srcGPU,
     dstGPU,
@@ -223,12 +229,18 @@ void stencil(
     numAbove,
     numBelow
   );
+  cudaEventRecord(stop, 0);
+
+  cudaEventSynchronize(stop);
+  cudaEventElapsedTime(&timeElapsed, start, stop);
 
   errorCode = cudaGetLastError();
   if(errorCode != cudaSuccess) {
     std::cerr << "Cuda Error: " << cudaGetErrorString(errorCode) << std::endl;
     std::exit(1);
   }
+
+  printf("Execution time of rectangular stencil average = %f ms\n", timeElapsed);
 
   errorCode = cudaMemcpy(dstHost.data(), dstGPU, gridSz, cudaMemcpyDeviceToHost);
   if(errorCode != cudaSuccess) {
