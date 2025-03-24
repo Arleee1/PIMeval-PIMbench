@@ -17,12 +17,11 @@
 #include <list>
 #include <cstring>
 #include <cmath>
+#include <cstdlib>
 #include <cuda_runtime.h>
 #if defined(_OPENMP)
 #include <omp.h>
 #endif
-
-#include "cuSten.h"
 
 // Params ---------------------------------------------------------------------
 typedef struct Params
@@ -49,7 +48,6 @@ void usage()
           "\n    -d    vertical stencil size (default=3)"
           "\n    -l    number of elements to the left of the output element for the stencil pattern, must be less than the horizontal stencil size (default=1)"
           "\n    -a    number of elements above the output element for the stencil pattern, must be less than the vertical stencil size (default=1)"
-          "\n    -c    dramsim config file"
           "\n    -i    input file containing a 2d array (default=random)"
           "\n    -v    t = verifies PIM output with host output. (default=false)"
           "\n");
@@ -64,12 +62,11 @@ struct Params getInputParams(int argc, char **argv)
   p.stencilHeight = 3;
   p.numLeft = 1;
   p.numAbove = 1;
-  p.configFile = nullptr;
   p.inputFile = nullptr;
   p.shouldVerify = false;
 
   int opt;
-  while ((opt = getopt(argc, argv, "h:x:y:w:d:l:a:c:i:v:")) >= 0)
+  while ((opt = getopt(argc, argv, "h:x:y:w:d:l:a:i:v:")) >= 0)
   {
     switch (opt)
     {
@@ -95,9 +92,6 @@ struct Params getInputParams(int argc, char **argv)
     case 'a':
       p.numAbove = strtoull(optarg, NULL, 0);
       break;
-    case 'c':
-      p.configFile = optarg;
-      break;
     case 'i':
       p.inputFile = optarg;
       break;
@@ -113,94 +107,133 @@ struct Params getInputParams(int argc, char **argv)
   return p;
 }
 
+inline __device__ uint64_t getIdxFromPos(const uint64_t x, const uint64_t y, const uint64_t width) {
+  return y*width + x;
+}
+
+//! @brief  Computes a stencil average over a 2d array using CUDA. Grid cells who's stencil pattern lies partly outside of the input data range are undefined.
+//! @param[in]  src  Device pointer to stencil input data
+//! @param[out]  dst  Device pointer to stencil output data
+//! @param[in]  toDivideBy  The number to divide the stencil sums by (Will be the number of cells in the stencil pattern for an average)
+//! @param[in]  gridWidth  The width of the input and output grid
+//! @param[in]  gridHeight  The height of the input and output grid
+//! @param[in]  stencilWidth  The horizontal width of the stencil average rectangle
+//! @param[in]  stencilHeight  The vertical height of the stencil average rectangle
+//! @param[in]  numLeft  The number of elements to the left of the result grid element
+//! @param[in]  numAbove  The number of elements to the right of the result grid element
+template <typename StencilType>
+__global__ void rectangleStencilAverage(
+  const StencilType* src,
+  StencilType* dst,
+  const StencilType toDivideBy,
+  const uint64_t gridWidth,
+  const uint64_t gridHeight,
+  const uint64_t stencilWidth,
+  const uint64_t stencilHeight,
+  const uint64_t numLeft,
+  const uint64_t numRight,
+  const uint64_t numAbove,
+  const uint64_t numBelow
+) {
+  const uint64_t xPos = blockDim.x * blockIdx.x + threadIdx.x + numLeft;
+	const uint64_t yPos = blockDim.y * blockIdx.y + threadIdx.y + numAbove;
+
+  if((xPos + numRight) >= gridWidth || (yPos + numBelow) >= gridHeight) {
+    return;
+  }
+
+  const uint64_t idx = getIdxFromPos(xPos, yPos, gridWidth);
+
+  StencilType output = 0;
+  for(uint64_t y=yPos-numAbove; y<=yPos+numBelow; ++y) {
+    for(uint64_t x=xPos-numLeft; x<=xPos+numRight; ++x) {
+      output += src[getIdxFromPos(x, y, gridWidth)];
+    }
+  }
+
+  dst[idx] = output / toDivideBy;
+}
+
 //! @brief  Computes a stencil pattern over a 2d array
 //! @param[in]  srcHost  The input stencil grid
 //! @param[in]  dstHost  The resultant stencil grid
-//! @param[in]  stencilPattern  The stencil pattern to apply
+//! @param[in]  gridWidth  The width of the stencil grid
+//! @param[in]  gridHeight  The height of the stencil grid
+//! @param[in]  stencilWidth  The width of the stencil average rectangle
+//! @param[in]  stencilHeight  The height of the stencil average rectangle
 //! @param[in]  numLeft  The number of elements to the left of the output element in the stencil pattern
 //! @param[in]  numAbove  The number of elements above the output element in the stencil pattern
-void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::vector<float>> &dstHost,
-             const std::vector<std::vector<float>> &stencilPattern, const uint64_t numLeft, const uint64_t numAbove) {
+void stencil(
+  const std::vector<float> &srcHost,
+  std::vector<float> &dstHost,
+  const uint64_t gridWidth,
+  const uint64_t gridHeight,
+  const uint64_t stencilWidth,
+  const uint64_t stencilHeight,
+  const uint64_t numLeft,
+  const uint64_t numAbove
+) {
 
   assert(!srcHost.empty());
-  assert(!srcHost[0].empty());
   assert(srcHost.size() == dstHost.size());
-  assert(srcHost[0].size() == dstHost[0].size());
-  assert(!stencilPattern.empty());
-  assert(!stencilPattern[0].empty());
-  assert(stencilPattern.size() > numAbove);
-  assert(stencilPattern[0].size() > numLeft);
+  assert(gridWidth * gridHeight == srcHost.size());
+  assert(numLeft < stencilWidth);
+  assert(numAbove < stencilHeight);
 
-  const uint64_t gridHeight = srcHost.size();
-  const uint64_t gridWidth = srcHost[0].size();
-  const uint64_t stencilHeight = stencilPattern.size();
-  const uint64_t stencilWidth = stencilPattern[0].size();
   const uint64_t numBelow = stencilHeight - numAbove - 1;
   const uint64_t numRight = stencilWidth - numLeft - 1;
+  const float toDivideBy = static_cast<float>(stencilWidth * stencilHeight);
 
-  constexpr int deviceNumber = 0;
-  constexpr int tilesNumber = 4;
-  constexpr int blockX = 32;
-  constexpr int blockY = 32;
+  cudaError_t errorCode;
 
-  // cuSten library expects managed memory
-  // TODO: Check if this impacts benchmark time
-  // TODO: Setup timing
-  float* gridInput;
-	float* gridOutput;
+  float* srcGPU;
+	float* dstGPU;
   const size_t gridSz = gridHeight * gridWidth * sizeof(float);
-  cudaMallocManaged(&gridInput, gridSz);
-	cudaMallocManaged(&gridOutput, gridSz);
-
-  float* stencilPatternGPU;
-  const size_t stencilPatternGPUSz = stencilHeight * stencilWidth * sizeof(float);
-  cudaMallocManaged(&stencilPatternGPU, stencilPatternGPUSz);
-
-  for(uint64_t gridY=0; gridY<gridHeight; ++gridY) {
-    for(uint64_t gridX=0; gridX<gridWidth; ++gridX) {
-      gridInput[gridY * gridWidth + gridX] = srcHost[gridY][gridX];
-      gridOutput[gridY * gridWidth + gridX] = -1.f;
-    }
+  errorCode = cudaMalloc((void **)&srcGPU, gridSz);
+  if(errorCode != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(errorCode) << std::endl;
+    std::exit(1);
+  }
+	errorCode = cudaMalloc((void **)&dstGPU, gridSz);
+  if(errorCode != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(errorCode) << std::endl;
+    std::exit(1);
   }
 
-  for(uint64_t stencilY=0; stencilY<stencilHeight; ++stencilY) {
-    for(uint64_t stencilX=0; stencilX<stencilWidth; ++stencilX) {
-      stencilPatternGPU[stencilY * stencilWidth + stencilX] = stencilPattern[stencilY][stencilX];
-    }
+  errorCode = cudaMemcpy(srcGPU, srcHost.data(), gridSz, cudaMemcpyHostToDevice);
+  if(errorCode != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(errorCode) << std::endl;
+    std::exit(1);
   }
 
-
-  cuSten_t<float> cuStenHandle;
-
-  cuStenCreate2DXYnp(
-    &cuStenHandle,
-    deviceNumber,
-    tilesNumber,
+  dim3 dimBlock(32, 32);
+  // Only compute grid cells where the stencil pattern is fully in range
+  dim3 dimGrid((gridWidth - stencilWidth + dimBlock.x) / dimBlock.x, (gridHeight - stencilHeight + dimBlock.y) / dimBlock.y);
+  
+  rectangleStencilAverage<<<dimGrid, dimBlock>>>(
+    srcGPU,
+    dstGPU,
+    toDivideBy,
     gridWidth,
     gridHeight,
-    blockX,
-    blockY,
-    gridOutput,
-    gridInput,
-    stencilPatternGPU,
     stencilWidth,
+    stencilHeight,
     numLeft,
     numRight,
-    stencilHeight,
     numAbove,
     numBelow
   );
 
-  cudaDeviceSynchronize();
+  errorCode = cudaGetLastError();
+  if(errorCode != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(errorCode) << std::endl;
+    std::exit(1);
+  }
 
-  cuStenCompute2DXYnp(&cuStenHandle, HOST);
-
-  cudaDeviceSynchronize();
-
-  for(uint64_t gridY=0; gridY<gridHeight; ++gridY) {
-    for(uint64_t gridX=0; gridX<gridWidth; ++gridX) {
-      dstHost[gridY][gridX] = gridOutput[gridY * gridWidth + gridX];
-    }
+  errorCode = cudaMemcpy(dstHost.data(), dstGPU, gridSz, cudaMemcpyDeviceToHost);
+  if(errorCode != cudaSuccess) {
+    std::cerr << "Cuda Error: " << cudaGetErrorString(errorCode) << std::endl;
+    std::exit(1);
   }
 }
 
@@ -212,15 +245,11 @@ int main(int argc, char* argv[])
   std::cout << "Stencil Size: " << params.stencilHeight << "x" << params.stencilWidth << std::endl;
   std::cout << "Num Above: " << params.numAbove << ", Num Left: " << params.numLeft << std::endl;
 
-  std::vector<std::vector<float>> x, y;
-  std::vector<std::vector<float>> stencilPattern;
+  std::vector<float> x, y;
   if (params.inputFile == nullptr)
   {
     // Fill in random grid
-    x.resize(params.gridHeight);
-    for(size_t i=0; i<x.size(); ++i) {
-      x[i].resize(params.gridWidth);
-    }
+    x.resize(params.gridHeight * params.gridWidth);
 
     #pragma omp parallel
     {
@@ -229,30 +258,8 @@ int main(int argc, char* argv[])
       std::uniform_real_distribution<float> dist(0.0f, 10000.0f);
 
       #pragma omp for
-      for(size_t i=0; i<params.gridHeight; ++i) {
-        for(size_t j=0; j<params.gridWidth; ++j) {
-          x[i][j] = dist(gen);
-        }
-      }
-    }
-
-    // Fill in random stencil pattern
-    stencilPattern.resize(params.stencilHeight);
-    for(size_t i=0; i<stencilPattern.size(); ++i) {
-      stencilPattern[i].resize(params.stencilWidth);
-    }
-
-    #pragma omp parallel
-    {
-      std::random_device rd;
-      std::mt19937 gen(rd());
-      std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-
-      #pragma omp for
-      for(size_t i=0; i<params.stencilHeight; ++i) {
-        for(size_t j=0; j<params.stencilWidth; ++j) {
-          stencilPattern[i][j] = dist(gen);
-        }
+      for(size_t i=0; i<x.size(); ++i) {
+        x[i] = dist(gen);
       }
     }
   }
@@ -263,11 +270,17 @@ int main(int argc, char* argv[])
   }
 
   y.resize(x.size());
-  for(size_t i=0; i<y.size(); ++i) {
-    y[i].resize(x[0].size());
-  }
 
-  stencil(x, y, stencilPattern, params.numLeft, params.numAbove);
+  stencil(
+    x,
+    y,
+    params.gridWidth,
+    params.gridHeight,
+    params.stencilWidth,
+    params.stencilHeight,
+    params.numLeft,
+    params.numAbove
+  );
 
   if (params.shouldVerify)
   {
@@ -278,6 +291,9 @@ int main(int argc, char* argv[])
     const uint64_t endY = params.gridHeight - (params.stencilHeight - params.numAbove - 1);
     const uint64_t startX = params.numLeft;
     const uint64_t endX = params.gridWidth - (params.stencilWidth - params.numLeft - 1);
+    const uint64_t numBelow = params.stencilHeight - params.numAbove - 1;
+    const uint64_t numRight = params.stencilWidth - params.numLeft - 1;
+    const float toDivideBy = static_cast<float>(params.stencilWidth * params.stencilHeight);
 
     // CPU and GPU results are not exactly the same
     // TODO: Check if this is okay
@@ -287,16 +303,17 @@ int main(int argc, char* argv[])
     for(uint64_t gridY=startY; gridY<endY; ++gridY) {
       for(uint64_t gridX=startX; gridX<endX; ++gridX) {
         float resCPU = 0.0f;
-        for(uint64_t stencilY=0; stencilY<params.stencilHeight; ++stencilY) {
-          for(uint64_t stencilX=0; stencilX<params.stencilWidth; ++stencilX) {
-            resCPU += stencilPattern[stencilY][stencilX] * x[gridY + stencilY - params.numAbove][gridX + stencilX - params.numLeft];
+        for(uint64_t stencilY=gridY-params.numAbove; stencilY<=gridY+numBelow; ++stencilY) {
+          for(uint64_t stencilX=gridX-params.numLeft; stencilX<=gridX+numRight; ++stencilX) {
+            resCPU += x[stencilY * params.gridWidth + stencilX];
           }
         }
-        if (std::abs(resCPU - y[gridY][gridX]) > acceptableDifference)
+        resCPU /= toDivideBy;
+        if (std::abs(resCPU - y[gridY * params.gridWidth + gridX]) > acceptableDifference)
         {
           #pragma omp critical
           {
-            std::cout << std::fixed << std::setprecision(3) << "Wrong answer: " << y[gridY][gridX] << " (expected " << resCPU << ") at position " << gridX << ", " << gridY << std::endl;
+            std::cout << std::fixed << std::setprecision(3) << "Wrong answer: " << y[gridY * params.gridWidth + gridX] << " (expected " << resCPU << ") at position " << gridX << ", " << gridY << std::endl;
             ok = false;
           }
         }
