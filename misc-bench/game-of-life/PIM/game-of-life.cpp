@@ -148,7 +148,7 @@ void add_vector_to_grid(const std::vector<uint8_t> &to_add, PimObjId to_associat
 
   PimObjId left = pimAllocAssociated(mid, PIM_BOOL);
   assert(left != -1);
-  status = pimCopyObjectToObject(mid, left);
+  status = pimCopyDeviceToDevice(mid, left);
   assert (status == PIM_OK);
   status = pimShiftElementsRight(left);
   assert (status == PIM_OK);
@@ -157,7 +157,7 @@ void add_vector_to_grid(const std::vector<uint8_t> &to_add, PimObjId to_associat
 
   PimObjId right = pimAllocAssociated(mid, PIM_BOOL);
   assert(right != -1);
-  status = pimCopyObjectToObject(mid, right);
+  status = pimCopyDeviceToDevice(mid, right);
   assert (status == PIM_OK);
   status = pimShiftElementsLeft(right);
   assert (status == PIM_OK);
