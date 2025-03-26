@@ -9,7 +9,7 @@ CUDA_DIR ?= $(shell dirname $(shell dirname $(shell which nvcc)))
 CUDA_INCLUDE := $(CUDA_DIR)/include
 CUDA_LIB_DIR := $(CUDA_DIR)/lib64
 
-ARCH := sm_80
+ARCH := sm_75
 ARCH_FLAG := -arch=$(ARCH)
 
 # Target executable
@@ -25,8 +25,8 @@ cuSten_LIB := $(cuSten_LIB_DIR)/libcuSten.a
 cuSten_FLAGS := -I$(cuSten_ROOT) -L$(cuSten_LIB_DIR) -lcuSten
 
 # Compiler flags
-CFLAGS := -O3
-CXXFLAGS := -std=c++17
+CFLAGS := -g
+CXXFLAGS := -std=c++17 -diag-suppress 177
 
 # make USE_OPENMP=1
 USE_OPENMP ?= 0

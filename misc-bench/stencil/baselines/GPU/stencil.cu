@@ -139,7 +139,7 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   const uint64_t numRight = stencilWidth - numLeft - 1;
 
   constexpr int deviceNumber = 0;
-  constexpr int tilesNumber = 4;
+  constexpr int tilesNumber = 1;
   constexpr int blockX = 32;
   constexpr int blockY = 32;
 
@@ -178,8 +178,8 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
     tilesNumber,
     gridWidth,
     gridHeight,
-    blockX,
-    blockY,
+    2 * stencilPattern[0].size(), // TODO: Something to do with this
+    2 * stencilPattern.size(), // TODO: Something to do with this
     gridOutput,
     gridInput,
     stencilPatternGPU,
@@ -283,6 +283,18 @@ int main(int argc, char* argv[])
     // TODO: Check if this is okay
     constexpr float acceptableDifference = 0.1f;
 
+//     float resCPU = 0.0f;
+//     for(uint64_t stencilY=0; stencilY<params.stencilHeight; ++stencilY) {
+//       for(uint64_t stencilX=0; stencilX<params.stencilWidth; ++stencilX) {
+//         resCPU += stencilPattern[stencilY][stencilX] * x[15 + stencilY - params.numAbove][15 + stencilX - params.numLeft];
+//         std::cout << std::fixed << std::setprecision(3) << "CPU adding grid: (" << (15 + stencilY - params.numAbove) << "," << (15 + stencilX - params.numLeft);
+//         std::cout << ") = " << x[15 + stencilY - params.numAbove][15 + stencilX - params.numLeft] << ", stencil value is ";
+//         std::cout << stencilPattern[stencilY][stencilX] << std::endl;
+//       }
+//     }
+// // sdf
+//     std::cout << std::fixed << std::setprecision(3) << "At 15, 15: " << y[15][15] << " (expected " << resCPU << ") at position: " << 15 << ", " << 15 << std::endl;
+//     std::cout << std::fixed << std::setprecision(3) << "15, 15 Input: " << x[15][15] << std::endl;
     #pragma omp parallel for collapse(2)
     for(uint64_t gridY=startY; gridY<endY; ++gridY) {
       for(uint64_t gridX=startX; gridX<endX; ++gridX) {
@@ -290,14 +302,18 @@ int main(int argc, char* argv[])
         for(uint64_t stencilY=0; stencilY<params.stencilHeight; ++stencilY) {
           for(uint64_t stencilX=0; stencilX<params.stencilWidth; ++stencilX) {
             resCPU += stencilPattern[stencilY][stencilX] * x[gridY + stencilY - params.numAbove][gridX + stencilX - params.numLeft];
+            if(gridX==14 && gridY==94) {
+              std::cout << std::fixed << std::setprecision(3) << "Adding grid val of for (14,94) on CPU: " << x[gridY + stencilY - params.numAbove][gridX + stencilX - params.numLeft] << std::endl;
+            }
           }
         }
         if (std::abs(resCPU - y[gridY][gridX]) > acceptableDifference)
         {
           #pragma omp critical
           {
-            std::cout << std::fixed << std::setprecision(3) << "Wrong answer: " << y[gridY][gridX] << " (expected " << resCPU << ") at position " << gridX << ", " << gridY << std::endl;
+            std::cout << std::fixed << std::setprecision(3) << "Wrong answer: " << y[gridY][gridX] << " (expected " << resCPU << ") at position: " << gridX << ", " << gridY << std::endl;
             ok = false;
+            // return 1;
           }
         }
       }
