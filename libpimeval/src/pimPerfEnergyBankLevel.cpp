@@ -324,8 +324,10 @@ pimPerfEnergyBankLevel::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjI
   unsigned bitsPerElement = obj.getBitsPerElement(PimBitWidth::ACTUAL);
   unsigned numRegions = obj.getRegions().size();
   uint64_t totalOp = 0;
-  // boundary handling - assume two times copying between device and host for boundary elements
-  pimeval::perfEnergy perfEnergyBT = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_D2H, numRegions * bitsPerElement / 8);
+  // boundary handling - assume copying between device and host then back for boundary elements
+  uint64_t numBytes = numRegions * bitsPerElement / 8;
+  pimeval::perfEnergy perfEnergyBTD2H = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_D2H, numBytes);
+  pimeval::perfEnergy perfEnergyBTH2D = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_H2D, numBytes);
 
   // rotate within subarray:
   // For every bit: Read row to SA; move SA to R1; Shift R1 by N steps; Move R1 to SA; Write SA to row
@@ -335,8 +337,8 @@ pimPerfEnergyBankLevel::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjI
   msRuntime = (m_tR + (bitsPerElement + 2) * m_tL + m_tW); // for one pass
   msRuntime *= numPass;
   mjEnergy = (m_eAP + (bitsPerElement + 2) * m_eL) * numPass;
-  msRuntime += 2 * perfEnergyBT.m_msRuntime;
-  mjEnergy += 2 * perfEnergyBT.m_mjEnergy;
+  msRuntime += perfEnergyBTD2H.m_msRuntime + perfEnergyBTH2D.m_msRuntime;
+  mjEnergy += perfEnergyBTD2H.m_mjEnergy + perfEnergyBTH2D.m_mjEnergy;
   std::cout << "PIM-Warning: Perf energy model is not precise for PIM command " << pimCmd::getName(cmdType, "") << std::endl;
 
   return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, totalOp);

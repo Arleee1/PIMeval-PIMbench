@@ -453,8 +453,10 @@ pimPerfEnergyBitSerial::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjI
   unsigned bitsPerElement = obj.getBitsPerElement(PimBitWidth::ACTUAL);
   unsigned numRegions = obj.getRegions().size();
   unsigned numCore = obj.getNumCoreAvailable();
-  // boundary handling - assume two times copying between device and host for boundary elements
-  pimeval::perfEnergy perfEnergyBT = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_D2H, numRegions * bitsPerElement / 8);
+  // boundary handling - assume copying between device and host then back for boundary elements
+  uint64_t numBytes = numRegions * bitsPerElement / 8;
+  pimeval::perfEnergy perfEnergyBTD2H = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_D2H, numBytes);
+  pimeval::perfEnergy perfEnergyBTH2D = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_H2D, numBytes);
 
   switch (m_simTarget) {
     case PIM_DEVICE_BITSIMD_V:
@@ -467,8 +469,8 @@ pimPerfEnergyBitSerial::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjI
       totalOp += 3 * bitsPerElement * numPass * numCore;
       msRuntime = msRead + msWrite + msCompute;
       mjEnergy = (m_eAP + 3 * m_eL) * bitsPerElement * numPass; // for one pass
-      msRuntime += 2 * perfEnergyBT.m_msRuntime;
-      mjEnergy += 2 * perfEnergyBT.m_mjEnergy;
+      msRuntime += perfEnergyBTD2H.m_msRuntime + perfEnergyBTH2D.m_msRuntime;
+      mjEnergy += perfEnergyBTD2H.m_mjEnergy + perfEnergyBTH2D.m_mjEnergy;
       break;
     case PIM_DEVICE_SIMDRAM:
       // todo
@@ -483,8 +485,8 @@ pimPerfEnergyBitSerial::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjI
       msRuntime = (m_tR + (bitsPerElement + 2) * m_tL + m_tW); // for one pass
       msRuntime *= numPass;
       mjEnergy = (m_eAP + (bitsPerElement + 2) * m_eL) * numPass;
-      msRuntime += 2 * perfEnergyBT.m_msRuntime;
-      mjEnergy += 2 * perfEnergyBT.m_mjEnergy;
+      msRuntime += perfEnergyBTD2H.m_msRuntime + perfEnergyBTH2D.m_msRuntime;
+      mjEnergy += perfEnergyBTD2H.m_mjEnergy + perfEnergyBTH2D.m_mjEnergy;
       break;
     default:
       assert(0);
