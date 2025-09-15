@@ -16,7 +16,6 @@
 #include <string>            // for string
 #include <memory>            // for unique_ptr
 #include <cassert>           // for assert
-#include <iostream>          // for cout
 
 class pimDevice;
 
@@ -38,6 +37,7 @@ public:
   void setElemIdxEnd(uint64_t idx) { m_elemIdxEnd = idx; }
   void setIsValid(bool val) { m_isValid = val; }
   void setNumColsPerElem(unsigned val) { m_numColsPerElem = val; }
+  void setIsBuffer(bool val) { m_isBuffer = val; }
 
   PimCoreId getCoreId() const { return m_coreId; }
   unsigned getRowIdx() const { return m_rowIdx; }
@@ -48,6 +48,7 @@ public:
   uint64_t getElemIdxEnd() const { return m_elemIdxEnd; }
   uint64_t getNumElemInRegion() const { return m_elemIdxEnd - m_elemIdxBegin; }
   unsigned getNumColsPerElem() const { return m_numColsPerElem; }
+  bool isBuffer() const { return m_isBuffer; }
 
   std::pair<unsigned, unsigned> locateIthElemInRegion(unsigned i) const {
     assert(i < getNumElemInRegion());
@@ -70,6 +71,7 @@ private:
   uint64_t m_elemIdxEnd = 0;    // end element index in this region
   unsigned m_numColsPerElem = 0;  // number of cols per element
   bool m_isValid = false;
+  bool m_isBuffer = false;  // true if this region is a buffer region
 };
 
 //! @class  pimDataHolder
@@ -141,9 +143,8 @@ public:
 
   // print all bytes for debugging
   void print() const {
-    std::cout << "PIM obj data holder: data-type = " << pimUtils::pimDataTypeEnumToStr(m_dataType)
-              << ", num-elements = " << m_numElements
-              << ", bytes-per-element = " << m_bytesPerElement << std::endl;
+    printf("PIM obj data holder: data-type = %s, num-elements = %lu, bytes-per-element = %u\n",
+           pimUtils::pimDataTypeEnumToStr(m_dataType).c_str(), m_numElements, m_bytesPerElement);
     for (size_t i = 0; i < m_data.size(); ++i) {
       std::printf(" %02x", m_data[i]);
       if ((i + 1) % 64 == 0) { std::printf("\n"); }
@@ -176,6 +177,17 @@ public:
       m_bitsPerElementPadded(bitsPerElementPadded),
       m_device(device)
   {}
+  pimObjInfo(PimObjId objId, PimDataType dataType, PimAllocEnum allocType, uint64_t numElements, unsigned bitsPerElementPadded, pimDevice* device, bool isBuffer)
+    : m_objId(objId),
+      m_assocObjId(objId),
+      m_dataType(dataType),
+      m_allocType(allocType),
+      m_data(dataType, numElements),
+      m_numElements(numElements),
+      m_bitsPerElementPadded(bitsPerElementPadded),
+      m_device(device),
+      m_isBuffer(isBuffer)
+  {}
   ~pimObjInfo() {}
 
   void addRegion(pimRegion region) { m_regions.push_back(region); }
@@ -199,6 +211,7 @@ public:
   bool isVLayout() const { return m_allocType == PIM_ALLOC_V || m_allocType == PIM_ALLOC_V1; }
   bool isHLayout() const { return m_allocType == PIM_ALLOC_H || m_allocType == PIM_ALLOC_H1; }
   bool isLoadBalanced() const { return m_isLoadBalanced; }
+  bool isBuffer() const { return m_isBuffer; }
 
   const std::vector<pimRegion>& getRegions() const { return m_regions; }
   std::vector<pimRegion> getRegionsOfCore(PimCoreId coreId) const;
@@ -253,6 +266,7 @@ private:
   bool m_isDualContactRef = false;
   pimDevice* m_device = nullptr; // for accessing simulated memory
   bool m_isLoadBalanced = true;
+  bool m_isBuffer = false; // true if this is a global buffer
 };
 
 
@@ -266,6 +280,7 @@ public:
 
   PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType);
   PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
+  PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
   bool pimFree(PimObjId objId);
   PimObjId pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd);
   PimObjId pimCreateDualContactRef(PimObjId refId);
@@ -281,7 +296,7 @@ public:
 private:
   pimRegion findAvailRegionOnCore(PimCoreId coreId, unsigned numAllocRows, unsigned numAllocCols) const;
   std::vector<PimCoreId> getCoreIdsSortedByLeastUsage() const;
-
+  
   //! @class  coreUsage
   //! @brief  Track row usage for allocation
   class coreUsage {

@@ -26,7 +26,7 @@ public:
   static void destroy();
 
   // Device creation and deletion
-  bool createDevice(PimDeviceEnum deviceType, unsigned numRanks, unsigned numBankPerRank, unsigned numSubarrayPerBank, unsigned numRows, unsigned numCols);
+  bool createDevice(PimDeviceEnum deviceType, unsigned numRanks, unsigned numBankPerRank, unsigned numSubarrayPerBank, unsigned numRows, unsigned numCols, unsigned bufferSize);
   bool createDeviceFromConfig(PimDeviceEnum deviceType, const char* configFileName);
   bool getDeviceProperties(PimDeviceProperties* deviceProperties);
   bool deleteDevice();
@@ -62,6 +62,7 @@ public:
   // Resource allocation and deletion
   PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType);
   PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
+  PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
   bool pimFree(PimObjId obj);
   PimObjId pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd);
   PimObjId pimCreateDualContactRef(PimObjId refId);
@@ -127,6 +128,7 @@ public:
   bool pimAesSbox(PimObjId src, PimObjId dest, const std::vector<uint8_t>& lut); 
   bool pimAesInverseSbox(PimObjId src, PimObjId dest, const std::vector<uint8_t>& lut); 
   bool pimPrefixSum(PimObjId src, PimObjId dest);
+  bool pimMAC(PimObjId src1, PimObjId src2, void* dest);
 
   // PIM API Fusion
   bool pimFuse(PimProg prog);

@@ -37,10 +37,12 @@ public:
   unsigned getNumSubarrayPerBank() const { return m_config.getNumSubarrayPerBank(); }
   unsigned getNumRowPerSubarray() const { return m_config.getNumRowPerSubarray(); }
   unsigned getNumColPerSubarray() const { return m_config.getNumColPerSubarray(); }
+  unsigned getOnChipBufferSize() const { return m_config.getBufferSize(); }
 
   unsigned getNumCores() const { return m_numCores; }
   unsigned getNumRows() const { return m_numRows; }
   unsigned getNumCols() const { return m_numCols; }
+  unsigned getBufferSize() const { return m_bufferSize; }
   bool isValid() const { return m_isValid; }
 
   bool isVLayoutDevice() const;
@@ -49,6 +51,7 @@ public:
 
   PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType);
   PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
+  PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
   bool pimFree(PimObjId obj);
   PimObjId pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd);
   PimObjId pimCreateDualContactRef(PimObjId refId);
@@ -72,6 +75,7 @@ private:
   unsigned m_numCores = 0;
   unsigned m_numRows = 0;
   unsigned m_numCols = 0;
+  unsigned m_bufferSize = 0;
   bool m_isValid = false;
   bool m_isInit = false;
   std::unique_ptr<pimResMgr> m_resMgr;

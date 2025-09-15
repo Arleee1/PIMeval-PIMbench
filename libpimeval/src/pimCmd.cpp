@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <climits>
+#include <cinttypes>         // for PRIu64, PRIx64
 
 //! @brief  Get PIM command name from command type enum
 std::string
@@ -78,6 +79,7 @@ pimCmd::getName(PimCmdEnum cmdType, const std::string& suffix)
     { PimCmdEnum::REDMIN_RANGE, "redmin_range" },
     { PimCmdEnum::REDMAX, "redmax" },
     { PimCmdEnum::REDMAX_RANGE, "redmax_range" },
+    { PimCmdEnum::MAC, "mac" },
     { PimCmdEnum::ROTATE_ELEM_R, "rotate_elem_r" },
     { PimCmdEnum::ROTATE_ELEM_L, "rotate_elem_l" },
     { PimCmdEnum::SHIFT_ELEM_R, "shift_elem_r" },
@@ -319,7 +321,7 @@ pimCmdCopy::updateStats() const
     pimSim::get()->getStatsMgr()->recordCopyMainToDevice(numElements * bitsPerElement, mPerfEnergy);
 
     if (m_debugCmds) {
-      std::printf("PIM-Cmd: Copied %llu elements of %u bits from host to PIM obj %d\n",
+      std::printf("PIM-Cmd: Copied %" PRIu64 " elements of %u bits from host to PIM obj %d\n",
                   numElements, bitsPerElement, m_dest);
     }
   } else if (m_cmdType == PimCmdEnum::COPY_D2H) {
@@ -333,7 +335,7 @@ pimCmdCopy::updateStats() const
     pimSim::get()->getStatsMgr()->recordCopyDeviceToMain(numElements * bitsPerElement, mPerfEnergy);
 
     if (m_debugCmds) {
-      std::printf("PIM-Cmd: Copied %llu elements of %u bits from PIM obj %d to host\n",
+      std::printf("PIM-Cmd: Copied %" PRIu64 " elements of %u bits from PIM obj %d to host\n",
                   numElements, bitsPerElement, m_src);
     }
   } else if (m_cmdType == PimCmdEnum::COPY_D2D) {
@@ -347,7 +349,7 @@ pimCmdCopy::updateStats() const
     pimSim::get()->getStatsMgr()->recordCopyDeviceToDevice(numElements * bitsPerElement, mPerfEnergy);
 
     if (m_debugCmds) {
-      std::printf("PIM-Cmd: Copied %llu elements of %u bits from PIM obj %d to PIM obj %d\n",
+      std::printf("PIM-Cmd: Copied %" PRIu64 " elements of %u bits from PIM obj %d to PIM obj %d\n",
                   numElements, bitsPerElement, m_src, m_dest);
     }
   } else {
@@ -436,7 +438,7 @@ pimCmdFunc1::sanityCheck() const
         return false;
       }
       if (m_scalarValue >= objSrc.getBitsPerElement(PimBitWidth::SIM)) {
-        std::printf("PIM-Error: PIM command %s bit index %llu out of range of %s type\n", getName().c_str(),
+        std::printf("PIM-Error: PIM command %s bit index %" PRIu64 " out of range of %s type\n", getName().c_str(),
                     m_scalarValue, pimUtils::pimDataTypeEnumToStr(objSrc.getDataType()).c_str());
         return false;
       }
@@ -447,7 +449,7 @@ pimCmdFunc1::sanityCheck() const
         return false;
       }
       if (m_scalarValue >= objDest.getBitsPerElement(PimBitWidth::SIM)) {
-        std::printf("PIM-Error: PIM command %s bit index %llu out of range of %s type\n", getName().c_str(),
+        std::printf("PIM-Error: PIM command %s bit index %" PRIu64 " out of range of %s type\n", getName().c_str(),
                     m_scalarValue, pimUtils::pimDataTypeEnumToStr(objDest.getDataType()).c_str());
         return false;
       }
@@ -781,7 +783,7 @@ bool
 pimCmdCond::execute()
 {
   if (m_debugCmds) {
-    std::printf("PIM-Cmd: %s (obj ids: bool %d, src1 %d, src2 %d, dest %d, scalar 0x%llx)\n",
+    std::printf("PIM-Cmd: %s (obj ids: bool %d, src1 %d, src2 %d, dest %d, scalar 0x%" PRIx64 ")\n",
         getName().c_str(), m_condBool, m_src1, m_src2, m_dest, m_scalarBits);
   }
 
@@ -1135,7 +1137,7 @@ bool
 pimCmdBroadcast::execute()
 {
   if (m_debugCmds) {
-    std::printf("PIM-Cmd: %s (obj id %d value %llu)\n", getName().c_str(), m_dest, m_signExtBits);
+    std::printf("PIM-Cmd: %s (obj id %d value %" PRIu64 ")\n", getName().c_str(), m_dest, m_signExtBits);
   }
 
   if (!sanityCheck()) {
@@ -1374,9 +1376,8 @@ pimCmdPrefixSum::computeRegion(unsigned index)
   }
   const pimObjInfo& objSrc = m_device->getResMgr()->getObjInfo(m_src);
   pimObjInfo& objDst = m_device->getResMgr()->getObjInfo(m_dst);
-  const pimRegion& srcRegion = objSrc.getRegions()[index];
   PimDataType dataType = objSrc.getDataType();
-  unsigned numElementsInRegion = srcRegion.getNumElemInRegion();
+
   for (uint64_t j = 0; j < objSrc.getNumElements(); ++j) {
       if (pimUtils::isSigned(dataType)) {
       uint64_t srcOperandBits = objSrc.getElementBits(j);
@@ -1425,7 +1426,155 @@ pimCmdPrefixSum::updateStats() const
   return true;
 }
 
+//! @brief  PIM CMD: MAC - sanity check
+template <typename T> bool
+pimCmdMAC<T>::sanityCheck() const
+{
+  pimResMgr* resMgr = m_device->getResMgr();
+  if (m_device->getSimTarget() != PIM_DEVICE_AIM) {
+    std::printf("PIM-Error: PIM CMD %s is only supported on AiM.\n", getName().c_str());
+    return false;
+  }
 
+  if (!isValidObjId(resMgr, m_src1) || !isValidObjId(resMgr, m_src2)) {
+    return false;
+  }
+
+  if (!m_device->getResMgr()->getObjInfo(m_src2).isBuffer()) {
+    std::printf("PIM-Error: PIM CMD %s requires source object %d to be buffers\n", getName().c_str(), m_src2);
+    return false;
+  }
+
+  if (m_device->getResMgr()->getObjInfo(m_src1).getDataType() != m_device->getResMgr()->getObjInfo(m_src2).getDataType()) {
+    std::printf("PIM-Error: PIM command %s does not support mixed data types.\n", getName().c_str());
+    return false;
+  }
+
+  return true;
+}
+
+template <typename T> bool
+pimCmdMAC<T>::execute()
+{
+  if (m_debugCmds) {
+    std::printf("PIM-Cmd: %s (obj id %d and obj id %d)\n", getName().c_str(), m_src1, m_src2);
+  }
+
+  if (!sanityCheck()) {
+    return false;
+  }
+
+  pimObjInfo &objSrc1 = m_device->getResMgr()->getObjInfo(m_src1);
+  pimObjInfo &objSrc2 = m_device->getResMgr()->getObjInfo(m_src2);
+  if (pimSim::get()->getDeviceType() != PIM_FUNCTIONAL) {
+    objSrc1.syncFromSimulatedMem();
+    objSrc2.syncFromSimulatedMem();
+  }
+
+  unsigned numRegions = objSrc1.getRegions().size();
+  for (unsigned i = 0; i < numRegions; ++i) {
+    m_regionResult.resize(numRegions, 0);
+  }
+  computeAllRegions(numRegions);
+  
+  //reduction
+  for (unsigned i = 0; i < numRegions; ++i) {
+    if (std::is_integral_v<T> && std::is_signed_v<T>)
+    {
+      switch (objSrc1.getDataType())
+      {
+      case PIM_INT8:
+        static_cast<int8_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int8_t>(m_regionResult[i]);
+        break;
+      case PIM_INT16:
+        static_cast<int16_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int16_t>(m_regionResult[i]);
+        break;
+      case PIM_INT32:
+        static_cast<int32_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int32_t>(m_regionResult[i]);
+        break;
+      case PIM_INT64:
+        static_cast<int64_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int64_t>(m_regionResult[i]);
+        break;
+      default:
+        break;
+      }
+    }
+    else if (std::is_integral_v<T> && std::is_unsigned_v<T>)
+    {
+      switch (objSrc1.getDataType())
+      {
+      case PIM_UINT8:
+        static_cast<int8_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int8_t>(m_regionResult[i]);
+        break;
+      case PIM_UINT16:
+        static_cast<int16_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int16_t>(m_regionResult[i]);
+        break;
+      case PIM_UINT32:
+        static_cast<int32_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int32_t>(m_regionResult[i]);
+        break;
+      case PIM_UINT64:
+        static_cast<int64_t *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<int64_t>(m_regionResult[i]);
+        break;
+      default:
+        break;
+      }
+    }
+    else
+    {
+      static_cast<float *>(m_dest)[objSrc1.getRegions()[i].getCoreId()] += static_cast<float>(m_regionResult[i]);
+    }
+  }
+  updateStats();
+  return true;
+}
+
+template <typename T> bool
+pimCmdMAC<T>::computeRegion(unsigned index)
+{
+  //TODO: Make it parallel
+  const pimObjInfo& objSrc1 = m_device->getResMgr()->getObjInfo(m_src1);
+  const pimObjInfo& objSrc2 = m_device->getResMgr()->getObjInfo(m_src2);
+
+  const pimRegion& src1Region = objSrc1.getRegions()[index];
+  PimDataType dataType = objSrc1.getDataType();
+  uint64_t elemIdxBegin = src1Region.getElemIdxBegin();
+  unsigned numElementsInRegion = src1Region.getNumElemInRegion();
+
+  for (uint64_t j = 0; j < numElementsInRegion; ++j) {
+    uint64_t elemIdx = elemIdxBegin + j;
+    if (pimUtils::isSigned(dataType)) {
+      uint64_t operandBits1 = objSrc1.getElementBits(elemIdx);
+      uint64_t operandBits2 = objSrc2.getElementBits(j);
+      int64_t operand1 = pimUtils::signExt(operandBits1, dataType);
+      int64_t operand2 = pimUtils::signExt(operandBits2, dataType);
+      m_regionResult[index] += operand1 * operand2;
+    } else if (pimUtils::isUnsigned(dataType)) {
+      uint64_t unsignedOperand1 = objSrc1.getElementBits(elemIdx);
+      uint64_t unsignedOperand2 = objSrc2.getElementBits(elemIdx);
+      m_regionResult[index] += unsignedOperand1 * unsignedOperand2;
+    } else if (pimUtils::isFP(dataType)) {
+      uint64_t operandBits1 = objSrc1.getElementBits(elemIdx);
+      uint64_t operandBits2 = objSrc2.getElementBits(elemIdx);
+      float floatOperand1 = pimUtils::castBitsToType<float>(operandBits1);
+      float floatOperand2 = pimUtils::castBitsToType<float>(operandBits2);
+      m_regionResult[index] += floatOperand1 * floatOperand2;
+    } else {
+      assert(0); // todo: data type
+    }
+  }
+  return true;
+}
+
+template <typename T> bool
+pimCmdMAC<T>::updateStats() const
+{
+  const pimObjInfo& objSrc = m_device->getResMgr()->getObjInfo(m_src1);
+  PimDataType dataType = objSrc.getDataType();
+  bool isVLayout = objSrc.isVLayout();
+  pimeval::perfEnergy mPerfEnergy = pimSim::get()->getPerfEnergyModel()->getPerfEnergyForMac(m_cmdType, objSrc);
+  pimSim::get()->getStatsMgr()->recordCmd(getName(dataType, isVLayout), mPerfEnergy);
+  return true;
+}
 
 //! @brief  Pim CMD: BitSIMD-V: Read a row to SA
 bool
@@ -1751,3 +1900,13 @@ template class pimCmdReduction<uint16_t>;
 template class pimCmdReduction<uint32_t>;
 template class pimCmdReduction<uint64_t>;
 template class pimCmdReduction<float>;
+
+template class pimCmdMAC<int8_t>;
+template class pimCmdMAC<int16_t>;
+template class pimCmdMAC<int32_t>;
+template class pimCmdMAC<int64_t>;
+template class pimCmdMAC<uint8_t>;
+template class pimCmdMAC<uint16_t>;
+template class pimCmdMAC<uint32_t>;
+template class pimCmdMAC<uint64_t>;
+template class pimCmdMAC<float>;

@@ -10,8 +10,9 @@
 #include "pimPerfEnergyFulcrum.h"
 #include "pimPerfEnergyBankLevel.h"
 #include "pimPerfEnergyAquabolt.h"
+#include "pimPerfEnergyAim.h"
 #include <cstdint>
-#include <iostream>
+#include <cstdio>
 
 
 //! @brief  A factory function to create perf energy model for sim target
@@ -23,19 +24,22 @@ pimPerfEnergyFactory::createPerfEnergyModel(const pimPerfEnergyModelParams& para
     case PIM_DEVICE_BITSIMD_V_AP:
     case PIM_DEVICE_BITSIMD_H:
     case PIM_DEVICE_SIMDRAM:
-      std::cout << "PIM-Info: Created performance energy model for bit-serial PIM" << std::endl;
+      printf("PIM-Info: Created performance energy model for bit-serial PIM\n");
       return std::make_unique<pimPerfEnergyBitSerial>(params);
     case PIM_DEVICE_FULCRUM:
-      std::cout << "PIM-Info: Created performance energy model for Fulcrum" << std::endl;
+      printf("PIM-Info: Created performance energy model for Fulcrum\n");
       return std::make_unique<pimPerfEnergyFulcrum>(params);
     case PIM_DEVICE_BANK_LEVEL:
-      std::cout << "PIM-Info: Created performance energy model for bank-level PIM" << std::endl;
+      printf("PIM-Info: Created performance energy model for bank-level PIM\n");
       return std::make_unique<pimPerfEnergyBankLevel>(params);
     case PIM_DEVICE_AQUABOLT:
-      std::cout << "PIM-Info: Created performance energy model for AQUABOLT" << std::endl;
+      printf("PIM-Info: Created performance energy model for AQUABOLT\n");
       return std::make_unique<pimPerfEnergyAquabolt>(params);
+    case PIM_DEVICE_AIM:
+      printf("PIM-Info: Created performance energy model for AiM\n");
+      return std::make_unique<pimPerfEnergyAim>(params);
     default:
-      std::cout << "PIM-Warning: Created performance energy base model for unrecognized simulation target" << std::endl;
+      printf("PIM-Warning: Created performance energy base model for unrecognized simulation target\n");
   }
   return std::make_unique<pimPerfEnergyBase>(params);
 }
@@ -49,17 +53,28 @@ pimPerfEnergyBase::pimPerfEnergyBase(const pimPerfEnergyModelParams& params)
 {
   m_tR = m_paramsDram.getNsRowRead() / m_nano_to_milli;
   m_tW = m_paramsDram.getNsRowWrite() / m_nano_to_milli;
+  m_tACT = m_paramsDram.getNsRowActivate() / m_nano_to_milli; // Row activate latency in ms
+  m_tPRE = m_paramsDram.getNsRowPrecharge() / m_nano_to_milli; // Row precharge latency in ms
   m_tL = m_paramsDram.getNsTCCD_S() / m_nano_to_milli;
   m_tGDL = m_paramsDram.getNsTCCD_L() / m_nano_to_milli;
   m_eAP = m_paramsDram.getPjActPre() / m_pico_to_milli; // Convert pJ to mJ
   m_eL = m_paramsDram.getPjLogic() / m_pico_to_milli; // Convert pJ to mJ
   m_eR = m_paramsDram.getPjRead() / m_pico_to_milli;
   m_eW = m_paramsDram.getPjWrite() / m_pico_to_milli;
+  m_eACT = m_paramsDram.getPjActivate() / m_pico_to_milli; // Convert pJ to mJ
+  m_ePRE = m_paramsDram.getPjPrecharge() / m_pico_to_milli; // Convert pJ to mJ
   // m_pBCore = (m_paramsDram.getMwIDD3N() - m_paramsDram.getMwIDD2N()) / 1000.0; // Convert mW to W, so that W * ms = mJ
   m_pBChip = m_paramsDram.getMwIDD3N() / 1000.0; // Convert mW to W, so that W * ms = mJ
   m_GDLWidth = m_paramsDram.getBurstLength() * m_paramsDram.getDeviceWidth();
   m_numChipsPerRank = m_paramsDram.getNumChipsPerRank();
   m_typicalRankBW = m_paramsDram.getTypicalRankBW(); // GB/s
+  m_tCK = m_paramsDram.gettCK() / m_nano_to_milli; // Convert ns to ms 
+  m_tCCD_S = m_paramsDram.gettCCD_S();
+  m_tCCD_L = m_paramsDram.gettCCD_L();
+  m_tRCD = m_paramsDram.gettRCD();
+  m_tRP = m_paramsDram.gettRP();
+  m_tCAS = m_paramsDram.getNsTCAS() / m_nano_to_milli; // Convert ns to ms
+  m_tRAS = m_paramsDram.gettRAS();
 }
 
 //! @brief  Perf energy model of data transfer between CPU memory and PIM memory
@@ -95,7 +110,7 @@ pimPerfEnergyBase::getPerfEnergyForBytesTransfer(PimCmdEnum cmdType, uint64_t nu
     }
     default:
     {
-      std::cout << "PIM-Warning: Perf energy model not available for PIM command " << pimCmd::getName(cmdType, "") << std::endl;
+      printf("PIM-Warning: Perf energy model not available for PIM command %s\n", pimCmd::getName(cmdType, "").c_str());
       break;
     }
   }
@@ -180,3 +195,15 @@ pimPerfEnergyBase::getPerfEnergyForPrefixSum(PimCmdEnum cmdType, const pimObjInf
   return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, mTotalOP);
 }
 
+//! @brief  Perf energy model of base class for MAC
+pimeval::perfEnergy
+pimPerfEnergyBase::getPerfEnergyForMac(PimCmdEnum cmdType, const pimObjInfo& obj) const
+{
+  double msRuntime = 1e10;
+  double mjEnergy = 999999999.9;
+  double msRead = 0.0;
+  double msWrite = 0.0;
+  double msCompute = 0.0;
+  uint64_t mTotalOP = 0;
+  return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, mTotalOP);
+}

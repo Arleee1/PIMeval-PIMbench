@@ -33,6 +33,7 @@ enum PimDeviceEnum {
   PIM_DEVICE_FULCRUM,
   PIM_DEVICE_BANK_LEVEL,
   PIM_DEVICE_AQUABOLT,
+  PIM_DEVICE_AIM,
 };
 
 /**
@@ -47,11 +48,15 @@ enum PimDeviceEnum {
  *
  * @var PIM_DEVICE_PROTOCOL_HBM
  * High Bandwidth Memory (HBM) protocol.
+ * 
+ * @var PIM_DEVICE_PROTOCOL_GDDR
+ * Graphics Double Data Rate (GDDR) protocol.
 */
 enum PimDeviceProtocolEnum {
   PIM_DEVICE_PROTOCOL_DDR = 0,
   PIM_DEVICE_PROTOCOL_LPDDR,
   PIM_DEVICE_PROTOCOL_HBM,
+  PIM_DEVICE_PROTOCOL_GDDR,
 };
 
 //! @brief  PIM allocation types
@@ -95,6 +100,7 @@ struct PimDeviceProperties {
   unsigned numSubarrayPerBank = 0;
   unsigned numRowPerSubarray = 0;
   unsigned numColPerSubarray = 0;
+  unsigned numPIMCores = 0;
   bool isHLayoutDevice = false;
 };
 
@@ -110,7 +116,19 @@ void pimResetStats();
 bool pimIsAnalysisMode();
 
 // Device creation and deletion
-PimStatus pimCreateDevice(PimDeviceEnum deviceType, unsigned numRanks, unsigned numBankPerRank, unsigned numSubarrayPerBank, unsigned numRows, unsigned numCols);
+/**
+ * @brief Creates and initializes a PIM (Processing-In-Memory) device with the specified configuration.
+ *
+ * @param deviceType      The type of PIM device to create (see PimDeviceEnum).
+ * @param numRanks        Number of ranks in the device.
+ * @param numBankPerRank  Number of banks per rank.
+ * @param numSubarrayPerBank Number of subarrays per bank.
+ * @param numRows         Number of rows in each subarray.
+ * @param numCols         Number of columns in each row.
+ * @param bufferSize      Optional on-chip buffer size (B) for the device (default is 0). This parameter is only applicable for AiM.
+ * @return PimStatus      Status code indicating success or failure of device creation.
+ */
+PimStatus pimCreateDevice(PimDeviceEnum deviceType, unsigned numRanks, unsigned numBankPerRank, unsigned numSubarrayPerBank, unsigned numRows, unsigned numCols, unsigned bufferSize = 0);
 PimStatus pimCreateDeviceFromConfig(PimDeviceEnum deviceType, const char* configFileName);
 PimStatus pimGetDeviceProperties(PimDeviceProperties* deviceProperties);
 PimStatus pimDeleteDevice();
@@ -118,6 +136,11 @@ PimStatus pimDeleteDevice();
 // Resource allocation and deletion
 PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType);
 PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
+// Buffer will always be allocated in H layout; Current assumption is buffer is global and shared across all PIM cores in a chip/device. This assumption is based on AiM.
+// The buffer is used for broadcasting data to all PIM cores in a chip/device.
+// Please note that each chip/device will hold the same data in their respective buffers.
+// TODO: Support per-core buffers (like UPMEM)
+PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
 PimStatus pimFree(PimObjId obj);
 
 // Data transfer
@@ -173,6 +196,13 @@ PimStatus pimPopCount(PimObjId src, PimObjId dest);
 
 // Only supported by bit-parallel PIM
 PimStatus pimPrefixSum(PimObjId src, PimObjId dest);
+
+// MAC operation: dest += src1 * src2
+// Note: src2 is a global buffer that holds a vector of values to be multiplied with src1.
+// Note: dest must be of the same data type as src1 and src2; Size of dest must be equal to the total number of PIM cores in the device.
+// Note: The MAC operation is performed in parallel across all PIM cores, and each PIM core writes its local MAC value to the specific id of the dest.
+// Note: User needs to ensure that dest vector is of size equal to the total number of PIM cores in the device, and contains `0` or any value that the user wants it to have as initial values.
+PimStatus pimMAC(PimObjId src1, PimObjId src2, void* dest);
 
 // Note: Reduction sum range is [idxBegin, idxEnd)
 PimStatus pimRedSum(PimObjId src, void* sum, uint64_t idxBegin = 0, uint64_t idxEnd = 0);

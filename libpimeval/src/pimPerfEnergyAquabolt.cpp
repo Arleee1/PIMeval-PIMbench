@@ -6,12 +6,12 @@
 
 #include "pimPerfEnergyAquabolt.h"
 #include "pimCmd.h"
-#include <iostream>
+#include <cstdio>
 #include <cmath>
 
 // Aquabolt adds a SIMD FPU shared between two banks, with only one bank accessing it at a time.
 // The supported FPU instructions are: ADD, MUL, MAC, and RELU. However, RELU is currently not implemented in the simulator.
-// This model assumes that each FPU operation (ADD, MUL, MAC, or RELU) takes `tCCD_L * 3` cycles to execute.
+// This model assumes that each FPU operation (ADD, MUL, MAC, or RELU) takes `tCCD_L` cycles to execute.
 // Additionally, for simplicity, the SIMD lane width is assumed to be determined by the GDL width of the HBM/DDR memory. 
 // This analytical model has been validated against the Aquabolt for vector addition and multiplication using a 100M-element vector of 16-bit integers. 
 // The model demonstrates a 1.5x speedup compared to the original Aquabolt.
@@ -28,41 +28,40 @@ pimPerfEnergyAquabolt::getPerfEnergyForFunc1(PimCmdEnum cmdType, const pimObjInf
   double msCompute = 0.0;
   unsigned numPass = obj.getMaxNumRegionsPerCore();
   unsigned bitsPerElement = obj.getBitsPerElement(PimBitWidth::ACTUAL);
-  unsigned numCores = obj.getNumCoresUsed();
+  unsigned numCores = obj.getNumCoreAvailable();
   unsigned maxElementsPerRegion = obj.getMaxElementsPerRegion();
   unsigned numberOfOperationPerElement = std::ceil(bitsPerElement * 1.0 / m_aquaboltFPUBitWidth);
-  unsigned minElementPerRegion = std::ceil(obj.getNumElements() * 1.0 / obj.getNumCoreAvailable()) - (maxElementsPerRegion * (numPass - 1));
+  unsigned elementsPerCore = std::ceil(obj.getNumElements() * 1.0 / numCores);
+  unsigned minElementPerRegion = elementsPerCore > maxElementsPerRegion ? elementsPerCore - (maxElementsPerRegion * (numPass - 1)) : elementsPerCore;
   unsigned maxGDLItr = std::ceil(maxElementsPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
   unsigned minGDLItr = std::ceil(minElementPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
-  double aquaboltCoreCycle = m_tGDL * 3;
+  double aquaboltCoreCycle = m_tGDL;
+  unsigned numActPre = std::ceil(maxElementsPerRegion * bitsPerElement * 1.0 / (16 * 256));
   uint64_t totalOp = 0;
+  unsigned numBankPerChip = numCores / m_numChipsPerRank;
+
   switch (cmdType)
   {
+    // Refer to Aquabolt Paper (Table 2, Figure 5). OP Format: GRF = BANK +/* SRF
+    // Aquabolt has 16 16-bit vector registers (GRF) per PIM core.
+    // As a result, depending on the bitsPerElement and columns per bank row, same row may be opened multiple times -- this is calculated as numActPre.
     case PimCmdEnum::ADD_SCALAR:
     case PimCmdEnum::MUL_SCALAR:
     { 
-      msRead = m_tR;
-      msWrite = m_tW;
+      msRead = (m_tACT + m_tPRE) * numPass * numActPre;
+      msWrite = (m_tACT + m_tPRE) * numPass * numActPre;
       msCompute = (minGDLItr * aquaboltCoreCycle * numberOfOperationPerElement) + ((maxGDLItr * aquaboltCoreCycle * numberOfOperationPerElement) * (numPass - 1));
       msRuntime = msRead + msWrite + msCompute;
-      mjEnergy = (m_eAP * 2 + (m_eR * 2 + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCores * numPass;
+      mjEnergy = ((m_eACT + m_ePRE) * numActPre * 2 + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement)) * numCores * (numPass - 1);
+      mjEnergy += ((m_eACT + m_ePRE) * numActPre * 2 +  (minElementPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement)) * numCores;
+      mjEnergy += (m_eR * maxGDLItr * (numPass-1) * numBankPerChip * m_numRanks + (m_eR * minGDLItr * numBankPerChip * m_numRanks));
+      mjEnergy += (m_eW * maxGDLItr * (numPass-1) * numBankPerChip * m_numRanks + (m_eW * minGDLItr * numBankPerChip * m_numRanks));
       mjEnergy += m_pBChip * m_numChipsPerRank * m_numRanks * msRuntime;
       totalOp = obj.getNumElements();
       break;
     }
     case PimCmdEnum::AES_SBOX:
     case PimCmdEnum::AES_INVERSE_SBOX:
-    {
-      numberOfOperationPerElement = 1; // Assuming each 8-bit element allocates one ALU word
-      msRead = m_tR;
-      msWrite = m_tW;
-      msCompute = (minGDLItr * aquaboltCoreCycle * numberOfOperationPerElement) + ((maxGDLItr * aquaboltCoreCycle * numberOfOperationPerElement) * (numPass - 1));
-      msRuntime = msRead + msWrite + msCompute;
-      mjEnergy = (m_eAP * 2 + (m_eR * 2 + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCores * numPass;
-      mjEnergy += m_pBChip * m_numChipsPerRank * m_numRanks * msRuntime;
-      totalOp = obj.getNumElements();
-      break;
-    }
     case PimCmdEnum::POPCOUNT:
     case PimCmdEnum::ABS:
     case PimCmdEnum::SUB_SCALAR:
@@ -80,7 +79,7 @@ pimPerfEnergyAquabolt::getPerfEnergyForFunc1(PimCmdEnum cmdType, const pimObjInf
     case PimCmdEnum::SHIFT_BITS_L:
     case PimCmdEnum::SHIFT_BITS_R:
     default:
-      std::cout << "PIM-Warning: Perf energy model not available for PIM command " << pimCmd::getName(cmdType, "") << std::endl;
+      printf("PIM-Warning: Perf energy model not available for PIM command %s\n", pimCmd::getName(cmdType, "").c_str());
       break;
   }
 
@@ -98,26 +97,32 @@ pimPerfEnergyAquabolt::getPerfEnergyForFunc2(PimCmdEnum cmdType, const pimObjInf
   double msCompute = 0.0;
   unsigned numPass = obj.getMaxNumRegionsPerCore();
   unsigned bitsPerElement = obj.getBitsPerElement(PimBitWidth::ACTUAL);
-  unsigned numCoresUsed = obj.getNumCoresUsed();
+  unsigned numCoresUsed = obj.getNumCoreAvailable();
   unsigned maxElementsPerRegion = obj.getMaxElementsPerRegion();
-  unsigned minElementPerRegion = std::ceil(obj.getNumElements() * 1.0 / obj.getNumCoreAvailable()) - (maxElementsPerRegion * (numPass - 1));
+  unsigned elementsPerCore = std::ceil(obj.getNumElements() * 1.0 / numCoresUsed);
+  unsigned minElementPerRegion = elementsPerCore > maxElementsPerRegion ? elementsPerCore - (maxElementsPerRegion * (numPass - 1)) : elementsPerCore;
   unsigned maxGDLItr = std::ceil(maxElementsPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
   unsigned minGDLItr = std::ceil(minElementPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
-  double aquaboltCoreCycle = m_tGDL * 3;
+  double aquaboltCoreCycle = m_tGDL;
+  unsigned numActPre = std::ceil(maxElementsPerRegion * bitsPerElement * 1.0 / (8 * 256));
   uint64_t totalOp = 0;
-
+  unsigned numBankPerChip = numCoresUsed / m_numChipsPerRank;
   switch (cmdType)
   {
+    // Refer to Aquabolt Paper (Table 2, Figure 5). OP Format: GRF = BANK +/* GRF
     case PimCmdEnum::ADD:
     case PimCmdEnum::MUL:
     {
       unsigned numberOfOperationPerElement = std::ceil(bitsPerElement * 1.0 / m_aquaboltFPUBitWidth);
-      msRead = 2 * m_tR * numPass;
-      msWrite = m_tW * numPass;
+      msRead = (2 * (m_tACT + m_tPRE) * numPass * numActPre) + (maxGDLItr * m_tGDL * (numPass - 1)) + (minGDLItr * m_tGDL);
+      msWrite = ((m_tACT + m_tPRE) * numPass * numActPre) + (maxGDLItr * m_tGDL * (numPass - 1)) + (minGDLItr * m_tGDL);
       msCompute = (maxGDLItr * numberOfOperationPerElement * aquaboltCoreCycle) * (numPass - 1);
       msCompute += (minGDLItr * numberOfOperationPerElement * aquaboltCoreCycle);
       msRuntime = msRead + msWrite + msCompute;
-      mjEnergy = ((m_eAP * 3) + (m_eR * 3 + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCoresUsed * numPass;
+      mjEnergy = (((m_eACT + m_ePRE) * 3 * numActPre) + ((maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCoresUsed * (numPass - 1);
+      mjEnergy += (((m_eACT + m_ePRE) * 3 * numActPre) + ((minElementPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCoresUsed;
+      mjEnergy += (m_eR * maxGDLItr * 2 * (numPass-1) * numBankPerChip * m_numRanks + (m_eR * 2 * minGDLItr * numBankPerChip * m_numRanks));
+      mjEnergy += (m_eW * maxGDLItr * (numPass-1) * numBankPerChip * m_numRanks + (m_eW * minGDLItr * numBankPerChip * m_numRanks));
       mjEnergy += m_pBChip * m_numChipsPerRank * m_numRanks * msRuntime;
       totalOp = obj.getNumElements();
       break;
@@ -138,15 +143,17 @@ pimPerfEnergyAquabolt::getPerfEnergyForFunc2(PimCmdEnum cmdType, const pimObjInf
        *
        * As a result, only one read operation is necessary for the entire pass.
       */
+      // OP Format: GRF = BANK * SRF; GRF = BANK + GRF 
       unsigned numberOfOperationPerElement = std::ceil(bitsPerElement * 1.0 / m_aquaboltFPUBitWidth) * 2; // multiplying by 2 as one addition and one multiplication is needed
-      msRead = m_tR;
-      msWrite = m_tW;
+      msRead = (m_tACT + m_tPRE) * numPass * numActPre * 2;
+      msWrite = (m_tACT + m_tPRE) * numPass * numActPre + (maxGDLItr * m_tGDL * (numPass - 1)) + (minGDLItr * m_tGDL);
       msCompute = (maxGDLItr * aquaboltCoreCycle * numberOfOperationPerElement) * (numPass - 1);
       msCompute += (minGDLItr * aquaboltCoreCycle * numberOfOperationPerElement);
       msRuntime = msRead + msWrite + msCompute;
-      mjEnergy = ((m_eAP * 3) + (m_eR * 3 + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCoresUsed;
-      mjEnergy += maxElementsPerRegion * numberOfOperationPerElement * m_aquaboltArithmeticEnergy * numCoresUsed;
-      mjEnergy *= numPass;
+      mjEnergy = (((m_eACT + m_ePRE) * 3 * numActPre) + ((maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCoresUsed * (numPass - 1);
+      mjEnergy += (((m_eACT + m_ePRE) * 3 * numActPre) + ((minElementPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numCoresUsed;
+      mjEnergy += (m_eR * maxGDLItr * 2 * (numPass-1) * numBankPerChip * m_numRanks + (m_eR * 2 * minGDLItr * numBankPerChip * m_numRanks));
+      mjEnergy += (m_eW * maxGDLItr * (numPass-1) * numBankPerChip * m_numRanks + (m_eW * minGDLItr * numBankPerChip * m_numRanks));
       mjEnergy += m_pBChip * m_numChipsPerRank * m_numRanks * msRuntime;
       totalOp = obj.getNumElements() * 2;
       break;
@@ -164,7 +171,7 @@ pimPerfEnergyAquabolt::getPerfEnergyForFunc2(PimCmdEnum cmdType, const pimObjInf
     case PimCmdEnum::MIN:
     case PimCmdEnum::MAX:
     default:
-      std::cout << "PIM-Warning: Unsupported for Aquabolt: " << pimCmd::getName(cmdType, "") << std::endl;
+      printf("PIM-Warning: Unsupported for Aquabolt: %s\n", pimCmd::getName(cmdType, "").c_str());
       break;
   }
 
@@ -182,25 +189,26 @@ pimPerfEnergyAquabolt::getPerfEnergyForReduction(PimCmdEnum cmdType, const pimOb
   double msCompute = 0.0;
   unsigned bitsPerElement = obj.getBitsPerElement(PimBitWidth::ACTUAL);
   unsigned maxElementsPerRegion = obj.getMaxElementsPerRegion();
-  unsigned numCore = obj.getNumCoresUsed();
+  unsigned numCore = obj.getNumCoreAvailable();
   double cpuTDP = 200; // W; AMD EPYC 9124 16 core
-  unsigned minElementPerRegion = std::ceil(obj.getNumElements() * 1.0 / obj.getNumCoreAvailable()) - (maxElementsPerRegion * (numPass - 1));
+  unsigned elementsPerCore = std::ceil(obj.getNumElements() * 1.0 / numCore);
+  unsigned minElementPerRegion = elementsPerCore > maxElementsPerRegion ? elementsPerCore - (maxElementsPerRegion * (numPass - 1)) : elementsPerCore;
   unsigned maxGDLItr = std::ceil(maxElementsPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
   unsigned minGDLItr = std::ceil(minElementPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
   unsigned numberOfOperationPerElement = std::ceil(bitsPerElement * 1.0 / m_aquaboltFPUBitWidth);
-  double aquaboltCoreCycle = m_tGDL * 3;
+  double aquaboltCoreCycle = m_tGDL;
   uint64_t totalOp = 0;
 
   switch (cmdType) {
     case PimCmdEnum::REDSUM:
     case PimCmdEnum::REDSUM_RANGE:
     {
-      msRead = m_tR;
+      msRead = (m_tR * numPass) + m_tGDL * numPass;
       msCompute = (maxGDLItr * aquaboltCoreCycle * numberOfOperationPerElement) * (numPass - 1);
       msCompute += (m_tR + (minGDLItr * aquaboltCoreCycle * numberOfOperationPerElement));
       msRuntime = msRead + msWrite + msCompute;
       // Refer to fulcrum documentation
-      mjEnergy = (m_eAP + (m_eR + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numPass * numCore;
+      mjEnergy = (m_eAP + ((m_eR * maxGDLItr) + (maxElementsPerRegion * m_aquaboltArithmeticEnergy * numberOfOperationPerElement))) * numPass * numCore;
       // reduction for all regions
       double aggregateMs = static_cast<double>(numCore) / (3200000 * 16);
       msRuntime += aggregateMs;
@@ -214,8 +222,7 @@ pimPerfEnergyAquabolt::getPerfEnergyForReduction(PimCmdEnum cmdType, const pimOb
     case PimCmdEnum::REDMAX:
     case PimCmdEnum::REDMAX_RANGE:
     default:
-      std::cout << "PIM-Warning: Unsupported for Aquabolt: " 
-                << pimCmd::getName(cmdType, "") << std::endl;
+      printf("PIM-Warning: Unsupported for Aquabolt: %s\n", pimCmd::getName(cmdType, "").c_str());
       break;
   }
   return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, totalOp);
@@ -233,16 +240,18 @@ pimPerfEnergyAquabolt::getPerfEnergyForBroadcast(PimCmdEnum cmdType, const pimOb
   unsigned numPass = obj.getMaxNumRegionsPerCore();
   unsigned bitsPerElement = obj.getBitsPerElement(PimBitWidth::ACTUAL);
   unsigned maxElementsPerRegion = obj.getMaxElementsPerRegion();
-  unsigned numCore = obj.getNumCoresUsed();
+  unsigned numCore = obj.getNumCoreAvailable();
   uint64_t totalOp = 0;
 
-  unsigned minElementPerRegion = std::ceil(obj.getNumElements() * 1.0 / obj.getNumCoreAvailable()) - (maxElementsPerRegion * (numPass - 1));
+  unsigned elementsPerCore = std::ceil(obj.getNumElements() * 1.0 / numCore);
+  unsigned minElementPerRegion = elementsPerCore > maxElementsPerRegion ? elementsPerCore - (maxElementsPerRegion * (numPass - 1)) : elementsPerCore;
   unsigned maxGDLItr = std::ceil(maxElementsPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
   unsigned minGDLItr = std::ceil(minElementPerRegion * bitsPerElement * 1.0 / m_GDLWidth);
   msWrite = (m_tW + maxGDLItr * m_tGDL) * (numPass - 1);
   msWrite += (m_tW + minGDLItr * m_tGDL);
   msRuntime = msRead + msWrite + msCompute;
-  mjEnergy = (m_eAP + m_eR * maxGDLItr) * numPass * numCore;
+  mjEnergy = (m_eAP + m_eR * maxGDLItr) * (numPass - 1) * numCore;
+  mjEnergy += (m_eAP + m_eR * minGDLItr) * numCore;
   mjEnergy += m_pBChip * m_numChipsPerRank * m_numRanks * msRuntime;
 
   return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, totalOp);
@@ -258,7 +267,7 @@ pimPerfEnergyAquabolt::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjIn
   double msWrite = 0.0;
   double msCompute = 0.0;
   uint64_t totalOp = 0;
-  std::cout << "PIM-Warning: Unsupported for Aquabolt: " << pimCmd::getName(cmdType, "") << std::endl;
+  printf("PIM-Warning: Unsupported for Aquabolt: %s\n", pimCmd::getName(cmdType, "").c_str());
 
   return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, totalOp);
 }

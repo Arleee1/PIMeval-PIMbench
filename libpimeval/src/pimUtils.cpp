@@ -7,7 +7,7 @@
 #include "pimUtils.h"
 #include "libpimeval.h"
 #include <fstream>
-#include <iostream>
+#include <cstdio>
 #include <sstream>
 #include <unordered_map>
 #include <string>
@@ -157,6 +157,7 @@ pimUtils::pimProtocolEnumToStr(PimDeviceProtocolEnum protocol)
     case PIM_DEVICE_PROTOCOL_DDR: return "DDR";
     case PIM_DEVICE_PROTOCOL_LPDDR: return "LPDDR";
     case PIM_DEVICE_PROTOCOL_HBM: return "HBM";
+    case PIM_DEVICE_PROTOCOL_GDDR: return "GDDR";
   }
   return "Unknown";
 }
@@ -177,6 +178,7 @@ pimUtils::getDeviceDataLayout(PimDeviceEnum deviceType)
     case PIM_DEVICE_FULCRUM: return PimDataLayout::H;
     case PIM_DEVICE_BANK_LEVEL: return PimDataLayout::H;
     case PIM_DEVICE_AQUABOLT: return PimDataLayout::H;
+    case PIM_DEVICE_AIM: return PimDataLayout::H;
     case PIM_FUNCTIONAL:
     case PIM_DEVICE_NONE: return PimDataLayout::UNKNOWN;
   }
@@ -283,7 +285,7 @@ pimUtils::readFileContent(const char* fileName, std::string& fileContent) {
     std::ifstream fileStream(fileName);
 
     if (!fileStream.is_open()) {
-        std::cerr << "PIM-Error: Could not open the file: " << fileName << std::endl;
+        printf("PIM-Error: Could not open the file: %s\n", fileName);
         return false;
     }
 
