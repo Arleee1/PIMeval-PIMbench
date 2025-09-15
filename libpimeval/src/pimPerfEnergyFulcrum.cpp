@@ -329,6 +329,7 @@ pimPerfEnergyFulcrum::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjInf
   msRuntime = msRead + msWrite + msCompute;
   mjEnergy = (m_eAP + (bitsPerElement + 2) * m_eL) * numPass;
 
+  // Only handle region boundaries if cross region communication is enabled
   if(useCrossRegionCommunication) {
     // boundary handling - assume two times copying between device and host for boundary elements
     pimeval::perfEnergy perfEnergyBT = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_D2H, numRegions * bitsPerElement / 8);

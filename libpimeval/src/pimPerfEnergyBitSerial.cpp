@@ -463,6 +463,8 @@ pimPerfEnergyBitSerial::getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjI
       totalOp += 3 * bitsPerElement * numPass * numCore;
       msRuntime = msRead + msWrite + msCompute;
       mjEnergy = (m_eAP + 3 * m_eL) * bitsPerElement * numPass; // for one pass
+
+      // Only handle region boundaries if cross region communication is enabled
       if(useCrossRegionCommunication) {
         // boundary handling - assume two times copying between device and host for boundary elements
         pimeval::perfEnergy perfEnergyBT = getPerfEnergyForBytesTransfer(PimCmdEnum::COPY_D2H, numRegions * bitsPerElement / 8);

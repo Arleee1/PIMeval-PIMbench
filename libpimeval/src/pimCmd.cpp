@@ -1221,7 +1221,7 @@ pimCmdRotate::execute()
 
   computeAllRegions(numRegions);
 
-  // handle region boundaries
+  // handle region boundaries only if using cross region communication
   if(m_useCrossRegionCommunication) {
     if (m_cmdType == PimCmdEnum::ROTATE_ELEM_R || m_cmdType == PimCmdEnum::SHIFT_ELEM_R) {
       for (unsigned i = 0; i < numRegions; ++i) {

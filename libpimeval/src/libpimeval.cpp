@@ -535,7 +535,7 @@ pimRotateElementsLeft(PimObjId src)
   return ok ? PIM_OK : PIM_ERROR;
 }
 
-//! @brief  Shift elements of an obj by one step to the right and fill zero
+//! @brief  Shift elements of an obj by one step to the right and fill zero. Only shifts across region boundaries if useCrossRegionCommunication==true.
 PimStatus
 pimShiftElementsRight(PimObjId src, bool useCrossRegionCommunication)
 {
@@ -543,7 +543,7 @@ pimShiftElementsRight(PimObjId src, bool useCrossRegionCommunication)
   return ok ? PIM_OK : PIM_ERROR;
 }
 
-//! @brief  Shift elements of an obj by one step to the left and fill zero
+//! @brief  Shift elements of an obj by one step to the left and fill zero. Only shifts across region boundaries if useCrossRegionCommunication==true.
 PimStatus
 pimShiftElementsLeft(PimObjId src, bool useCrossRegionCommunication)
 {
