@@ -102,7 +102,12 @@ struct Params getInputParams(int argc, char **argv)
   return p;
 }
 
-//! @brief  Sums the neighbors of each element in a stencil row to compute the horizontal stencil sum 
+//! @brief  Sums the neighbors of each element in a stencil row to compute the horizontal stencil sum
+//!
+//! Sums radius number of elemements to the left and right of center element, including center element
+//! Puts each result pimRowSum[i] where i is the center index
+//! Formula: pimRowSum[i] = Σ (j ∈ [i-radius, i+radius]) mid[j]
+//! Works by shifting mid to the left and right and adding shifted versions
 //! @param[in]  mid  PIM row to be summed
 //! @param[out]  pimRowSum  The resultant PIM object to place the sum into
 //! @param[in,out]  shiftBackup  Temporary PIM object used for calculations
@@ -143,10 +148,25 @@ void sumStencilRow(PimObjId mid, PimObjId pimRowSum, PimObjId shiftBackup, const
   }
 }
 
+//! @brief  Computes one iteration of one chunk of the stencil
+//!
+//! Uses circular queue to compute window sums
+//! Adds the next row to the front of the queue and to the sum
+//! Takes the sum (divided by the stencil area) as the result from the row
+//! Subtracts the back of the queue from the sum
+//! Pops from the queue back of the queue
+//! Repeats until done
+//! @param[in]  workingPimMemory  PIM rows in the stencil chunk
+//! @param[in]  rowsInSumCircularQueue  Queue used for keeping track of running sum of rows vertically
+//! @param[in,out]  tmpPim  Temporary PIM object used for calculations
+//! @param[in,out]  runningSum Temporary PIM object used for keeping track of the current running (vertical) sum
+//! @param[in]  stencilAreaToMultiplyPim This algorithm computes stencil average, thus each element in the result must be divided by the stencil area. This is done by multiplying by the inverse.
+//! @param[in]  radius  The stencil radius
 void computeStencilChunkIteration(std::vector<PimObjId>& workingPimMemory, std::vector<PimObjId>& rowsInSumCircularQueue, PimObjId tmpPim, PimObjId runningSum, const uint64_t stencilAreaToMultiplyPim, const uint64_t radius) {
   PimStatus status;
-  uint64_t circularQueueTop = 0;
+
   uint64_t circularQueueBot = 0;
+  uint64_t circularQueueTop = 0;
 
   sumStencilRow(workingPimMemory[0], rowsInSumCircularQueue[circularQueueTop], tmpPim, radius);
   ++circularQueueTop;
@@ -155,6 +175,13 @@ void computeStencilChunkIteration(std::vector<PimObjId>& workingPimMemory, std::
   status = pimAdd(rowsInSumCircularQueue[0], rowsInSumCircularQueue[1], runningSum);
   assert (status == PIM_OK);
 
+  // At this point:
+  // circularQueueBot = 0
+  // circularQueueTop = 2
+  // rowsInSumCircularQueue[0] = workingPimMemory[0] horizontally summed
+  // rowsInSumCircularQueue[1] = workingPimMemory[1] horizontally summed
+  // runningSum = sum of first two rows horizontally summed
+
   for(uint64_t i=2; i<2*radius; ++i) {
     sumStencilRow(workingPimMemory[i], rowsInSumCircularQueue[circularQueueTop], tmpPim, radius);
     status = pimAdd(runningSum, rowsInSumCircularQueue[circularQueueTop], runningSum);
@@ -162,7 +189,20 @@ void computeStencilChunkIteration(std::vector<PimObjId>& workingPimMemory, std::
     ++circularQueueTop;
   }
 
-  uint64_t nextRowToAdd = 2*radius;
+  // At this point:
+  // circularQueueBot = 0
+  // circularQueueTop = 2*radius
+  // rowsInSumCircularQueue[0...2*radius] are occupied with workingPimMemory[0...2*radius] horizontally summed
+  // runningSum = sum of rows [0...2*radius] horizontally summed
+
+  uint64_t nextRowToAdd = 2*radius; // The index of the next row to add to the queue and to the running sum
+
+  // Loops over the rest of the rows in the current chunk, vertically
+  // Each iteration, finds horizontal sum of the next row (nextRowToAdd)
+  // Places this horizontal sum at the front of the queue (at position circularQueueTop)
+  // Adds the horizontal sum to the runningSum
+  // Places runningSum/stencilArea into the workingPimMemory as the final result for the row
+  // If neccessary, subtracts the row from the back of the queue from the runningSum
 
   for(uint64_t row=radius; row<workingPimMemory.size()-radius; ++row) {
     sumStencilRow(workingPimMemory[nextRowToAdd], rowsInSumCircularQueue[circularQueueTop], tmpPim, radius);
@@ -184,7 +224,14 @@ void computeStencilChunkIteration(std::vector<PimObjId>& workingPimMemory, std::
   }
 }
 
-void copyChunkedVectorPim(std::vector<float> &vec, PimObjId pimObj, const uint64_t pimObjLen, const uint64_t numInvalid, const uint64_t numElementsHorizontal, const bool isToPim) {
+
+//! @brief  Copies data to/from PIM, accounting for chunking in necessary
+//! @param[in]  vec  Host vector to copy to PIM
+//! @param[in]  pimObj  PIM Object to copy vector into
+//! @param[in]  numInvalid  Number of elements on each side (left/right) of row that will not be included in final result
+//! @param[in]  numElementsHorizontal  Number of PIM fp32 elements that can be placed in a row without shifting issues. If stencil is horizontally chunked, this means that elements cannot shift accross these boundaries, e.g. if numElementsHorizontal=100, then pimShiftElementsLeft cannot shift element 100 into position 99.
+//! @param[in]  isToPim Direction to copy. If true, then copy from host to PIM, if false then PIM to host
+void copyChunkedVectorPim(std::vector<float> &vec, PimObjId pimObj, const uint64_t numInvalid, const uint64_t numElementsHorizontal, const bool isToPim) {
   PimStatus status;
   if constexpr (!isHorizontallyChunked) {
     if(isToPim) {
@@ -194,8 +241,11 @@ void copyChunkedVectorPim(std::vector<float> &vec, PimObjId pimObj, const uint64
     }
     assert (status == PIM_OK);
   } else {
+    //! @brief  Total number of usable elements in final result
     const uint64_t totalValid = vec.size() - 2*numInvalid;
+    //! @brief  Maximum number of usable elements in a horizontal chunk, will be the number usable for all except for (possibly) the last chunk
     const uint64_t maxUsable = numElementsHorizontal - 2*numInvalid;
+    //! @brief  Total number of horizontal chunks
     const uint64_t numChunks = (totalValid + maxUsable - 1) / maxUsable;
     if(isToPim) {
       uint64_t hostStartIdx = 0;
@@ -252,10 +302,16 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   uint32_t tmp;
   std::memcpy(&tmp, &stencilAreaFloat, sizeof(float));
   const uint64_t stencilAreaToMultiplyPim = static_cast<uint64_t>(tmp);
-  constexpr uint64_t maxIterationsPerPim = 2; // TODO: what should this number be?
+
+  // Model assumes that only a finite number of stencil iterations can be computed on the PIM device before transferring back to the host
+  // In chunked stencil implementations (with cross region computations) this limit is both vertical and horizontal
+  // In non-chunked stencil implementations, this limit is purely vertical
+  // TODO: Figure out what to make this number
+  constexpr uint64_t maxIterationsPerPim = 5; // TODO: what should this number be?
 
   uint64_t pimAllocWidth;
   if constexpr (isHorizontallyChunked) {
+    // Represents the number of elements on the left/right that aren't part of the final result for a horizontally chunked implementation. Without data movement, each iteration causes <radius> number of elements on each side to no longer be valid.
     const uint64_t maxInvalidHorizontal = radius * std::min(maxIterationsPerPim, iterations);
     const uint64_t maxUsableHorizontal = numElementsHorizontal - 2*maxInvalidHorizontal;
     const uint64_t maxChunksHorizontal = (gridWidth + maxUsableHorizontal - 1) / maxUsableHorizontal;
@@ -284,22 +340,22 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   const uint64_t numLoops = (iterations + maxIterationsPerPim - 1)/maxIterationsPerPim;
   for(uint64_t iter=0; iter<numLoops; ++iter) {
     const uint64_t currIterations = iter+1==numLoops ? (iterations - maxIterationsPerPim*(numLoops-1)) : maxIterationsPerPim;
-    const uint64_t invalidResultsTop = radius * currIterations;
+    const uint64_t invalidResultsEachSide = radius * currIterations;
 
     uint64_t firstRowSrc = 0;
     for(;;) {
-      const uint64_t firstRowUsableSrc = firstRowSrc + invalidResultsTop;
-      if(firstRowUsableSrc + invalidResultsTop >= srcHost.size()) {
+      const uint64_t firstRowUsableSrc = firstRowSrc + invalidResultsEachSide;
+      if(firstRowUsableSrc + invalidResultsEachSide >= srcHost.size()) {
         break;
       }
       const uint64_t totalRowsThisIter = std::min(srcHost.size(), firstRowSrc + workingPimMemory.size()) - firstRowSrc;
-      const uint64_t usableRowsThisIter = totalRowsThisIter - 2*invalidResultsTop;
+      const uint64_t usableRowsThisIter = totalRowsThisIter - 2*invalidResultsEachSide;
       uint64_t workingPimMemoryIdx = 0;
       for(uint64_t srcHostRow = firstRowSrc; srcHostRow < firstRowSrc + totalRowsThisIter; ++srcHostRow) {
         if(iter == 0) {
-          copyChunkedVectorPim(const_cast<std::vector<float>&>(srcHost[srcHostRow]), workingPimMemory[workingPimMemoryIdx], pimAllocWidth, invalidResultsTop, numElementsHorizontal, true);
+          copyChunkedVectorPim(const_cast<std::vector<float>&>(srcHost[srcHostRow]), workingPimMemory[workingPimMemoryIdx], invalidResultsEachSide, numElementsHorizontal, true);
         } else {
-          copyChunkedVectorPim(tmpGrid[srcHostRow], workingPimMemory[workingPimMemoryIdx], pimAllocWidth, invalidResultsTop, numElementsHorizontal, true);
+          copyChunkedVectorPim(tmpGrid[srcHostRow], workingPimMemory[workingPimMemoryIdx], invalidResultsEachSide, numElementsHorizontal, true);
         }
         ++workingPimMemoryIdx;
       }
@@ -308,9 +364,9 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
         computeStencilChunkIteration(workingPimMemory, rowsInSumCircularQueue, tmpPim, runningSum, stencilAreaToMultiplyPim, radius);
       }
 
-      workingPimMemoryIdx = invalidResultsTop;
+      workingPimMemoryIdx = invalidResultsEachSide;
       for(uint64_t srcHostRow = firstRowUsableSrc; srcHostRow < firstRowUsableSrc + usableRowsThisIter; ++srcHostRow) {
-        copyChunkedVectorPim(dstHost[srcHostRow], workingPimMemory[workingPimMemoryIdx], pimAllocWidth, invalidResultsTop, numElementsHorizontal, false);
+        copyChunkedVectorPim(dstHost[srcHostRow], workingPimMemory[workingPimMemoryIdx], invalidResultsEachSide, numElementsHorizontal, false);
         ++workingPimMemoryIdx;
       }
 
