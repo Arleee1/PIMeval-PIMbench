@@ -465,14 +465,9 @@ int main(int argc, char* argv[])
   if(deviceProp.isHLayoutDevice) {
     switch(deviceProp.simTarget) {
       case PIM_DEVICE_FULCRUM:
+      case PIM_DEVICE_BANK_LEVEL:
         numElementsHorizontal = deviceProp.numColPerSubarray / bitsPerElement;
         break;
-      case PIM_DEVICE_BANK_LEVEL: {
-          // numElementsHorizontal = deviceProp.numSubarrayPerBank * deviceProp.numColPerSubarray / bitsPerElement;
-          // TODO: Are bank level regions subarrays or banks?
-          numElementsHorizontal = deviceProp.numColPerSubarray / bitsPerElement;
-          break;
-        }
       default:
         std::cerr << "Stencil unimplemented for simulation target: " << deviceProp.simTarget << std::endl;
         std::exit(1);
