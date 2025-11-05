@@ -24,9 +24,9 @@ ifeq ($(USE_OPENMP),1)
 	CXXFLAGS += -fopenmp
 endif
 
-.PHONY: all clean
+.PHONY: all clean debug perf dramsim3_integ
 
-all: $(EXEC)
+all debug perf dramsim3_integ: $(EXEC)
 
 # Note: Need to avoid feeding .h files to clang command line
 $(EXEC): $(SRC_FILES) $(HEADER_DEPS)
