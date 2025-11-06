@@ -15,10 +15,16 @@ endif
 EXEC := stencil.out
 SRC := stencil.cpp
 
-debug perf dramsim3_integ: $(EXEC)
+EXEC2 := stencil_alt.out
+SRC2 := stencil_alt.cpp
+
+debug perf dramsim3_integ: $(EXEC) $(EXEC2)
 
 $(EXEC): $(SRC) $(DEPS)
 	$(CXX) $< $(CXXFLAGS) -o $@
 
+$(EXEC2): $(SRC2) $(DEPS)
+	$(CXX) $< $(CXXFLAGS) -o $@
+
 clean:
-	rm -rf $(EXEC) *.dSYM
+	rm -rf $(EXEC) $(EXEC2) *.dSYM
