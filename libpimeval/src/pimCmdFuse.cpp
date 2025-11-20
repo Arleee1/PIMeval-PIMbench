@@ -5,6 +5,7 @@
 // See the LICENSE file in the root of this repository for more details.
 
 #include "pimCmdFuse.h"
+#include "pimDevice.h"
 #include <cstdio>
 
 
@@ -17,7 +18,7 @@ pimCmdFuse::execute()
   }
 
   // Functional simulation
-  // TODO: skip original updateStats
+  m_device->startCmdFuse(m_prog.m_apis.size());
   bool success = true;
   for (auto& api : m_prog.m_apis) {
     PimStatus status = api();
@@ -27,8 +28,10 @@ pimCmdFuse::execute()
     }
   }
 
+  m_device->clearFuseFlag();
   // Analyze API fusion opportunities
   success = success && updateStats();
+  m_device->clearFusedCmds();
   return success;
 }
 
@@ -36,7 +39,10 @@ pimCmdFuse::execute()
 bool
 pimCmdFuse::updateStats() const
 {
-  // TODO: Parse m_prog and update stats
+  bool success = true;
+  for (auto& api : m_device->getFusedCmds()) {
+    success &= api->updateStats();
+  }
   return true;
 }
 

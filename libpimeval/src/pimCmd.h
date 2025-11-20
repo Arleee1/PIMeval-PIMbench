@@ -130,6 +130,7 @@ public:
     return getName(m_cmdType, suffix);
   }
   static std::string getName(PimCmdEnum cmdType, const std::string& suffix);
+  virtual bool updateStats() const { return false; }
 
 protected:
   bool isValidObjId(pimResMgr* resMgr, PimObjId objId) const;
@@ -141,7 +142,6 @@ protected:
 
   virtual bool sanityCheck() const { return false; }
   virtual bool computeRegion(unsigned index) { return false; }
-  virtual bool updateStats() const { return false; }
   bool computeAllRegions(unsigned numRegions);
 
   //! @brief  Utility: Get bits of an element from a region. The bits are stored as uint64_t without sign extension

@@ -267,6 +267,38 @@ pimDevice::executeCmd(std::unique_ptr<pimCmd> cmd)
   cmd->setDevice(this);
   bool ok = cmd->execute();
 
+  if(isInCmdFuse()) {
+    addPimCmdToFuse(std::move(cmd));
+  }
+
   return ok;
 }
 
+//! @brief  Start command fusion
+void
+pimDevice::startCmdFuse(const size_t numCmds = 0)
+{
+  m_isInCmdFuse = true;
+  m_fusedCmds.reserve(numCmds);
+}
+
+//! @brief  Clear command fusion flag
+void
+pimDevice::clearFuseFlag()
+{
+  m_isInCmdFuse = false;
+}
+
+//! @brief  Clear fused command list
+void
+pimDevice::clearFusedCmds()
+{
+  m_fusedCmds.clear();
+}
+
+//! @brief  Add a PIM command to the fused command list
+void
+pimDevice::addPimCmdToFuse(std::unique_ptr<pimCmd> cmd)
+{
+  m_fusedCmds.push_back(std::move(cmd));
+}

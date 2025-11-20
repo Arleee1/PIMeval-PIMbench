@@ -67,6 +67,13 @@ public:
   pimCore& getCore(PimCoreId coreId) { return m_cores[coreId]; }
   bool executeCmd(std::unique_ptr<pimCmd> cmd);
 
+  void startCmdFuse(const size_t numCmds);
+  void clearFuseFlag();
+  void clearFusedCmds();
+  void addPimCmdToFuse(std::unique_ptr<pimCmd> cmd);
+  bool isInCmdFuse() const { return m_isInCmdFuse; }
+  std::vector<std::unique_ptr<pimCmd>>& getFusedCmds() { return m_fusedCmds; }
+
 private:
   bool init();
   bool adjustConfigForSimTarget(unsigned& numRanks, unsigned& numBankPerRank, unsigned& numSubarrayPerBank, unsigned& numRows, unsigned& numCols);
@@ -81,6 +88,8 @@ private:
   std::unique_ptr<pimResMgr> m_resMgr;
   std::unique_ptr<pimPerfEnergyBase> m_perfEnergyModel;
   std::vector<pimCore> m_cores;
+  std::vector<std::unique_ptr<pimCmd>> m_fusedCmds;
+  bool m_isInCmdFuse = false;
 
 #ifdef DRAMSIM3_INTEG
   dramsim3::PIMCPU* m_hostMemory = nullptr;

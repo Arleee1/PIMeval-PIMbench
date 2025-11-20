@@ -310,6 +310,9 @@ pimCmdCopy::sanityCheck() const
 bool
 pimCmdCopy::updateStats() const
 {
+   if(m_device->isInCmdFuse()) {
+    return true;
+   }
    if (m_cmdType == PimCmdEnum::COPY_H2D) {
     const pimObjInfo &objDest = m_device->getResMgr()->getObjInfo(m_dest);
     uint64_t numElements = objDest.getNumElements();
@@ -588,6 +591,9 @@ pimCmdFunc1::bitSliceInsert(const pimObjInfo& objSrcBool, pimObjInfo& objDest, u
 bool
 pimCmdFunc1::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   // Special handling: Use dest for performance energy calculation of bit-slice insert
   bool useDestAsSrc = (m_cmdType == PimCmdEnum::BIT_SLICE_INSERT);
   const pimObjInfo& objSrc = (useDestAsSrc? m_device->getResMgr()->getObjInfo(m_dest) : m_device->getResMgr()->getObjInfo(m_src));
@@ -767,6 +773,9 @@ pimCmdFunc2::computeRegion(unsigned index)
 bool
 pimCmdFunc2::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objSrc1 = m_device->getResMgr()->getObjInfo(m_src1);
   const pimObjInfo& objSrc2 = m_device->getResMgr()->getObjInfo(m_src2);
   const pimObjInfo& objDest = m_device->getResMgr()->getObjInfo(m_dest);
@@ -939,6 +948,9 @@ pimCmdCond::computeRegion(unsigned index)
 bool
 pimCmdCond::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objDest = m_device->getResMgr()->getObjInfo(m_dest);
   PimDataType dataType = objDest.getDataType();
   bool isVLayout = objDest.isVLayout();
@@ -1100,6 +1112,9 @@ pimCmdReduction<T>::computeRegion(unsigned index)
 template <typename T> bool
 pimCmdReduction<T>::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objSrc = m_device->getResMgr()->getObjInfo(m_src);
   PimDataType dataType = objSrc.getDataType();
   bool isVLayout = objSrc.isVLayout();
@@ -1188,6 +1203,9 @@ pimCmdBroadcast::computeRegion(unsigned index)
 bool
 pimCmdBroadcast::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objDest = m_device->getResMgr()->getObjInfo(m_dest);
   PimDataType dataType = objDest.getDataType();
   bool isVLayout = objDest.isVLayout();
@@ -1319,6 +1337,9 @@ pimCmdRotate::computeRegion(unsigned index)
 bool
 pimCmdRotate::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objSrc = m_device->getResMgr()->getObjInfo(m_src);
   PimDataType dataType = objSrc.getDataType();
   bool isVLayout = objSrc.isVLayout();
@@ -1416,6 +1437,9 @@ pimCmdPrefixSum::computeRegion(unsigned index)
 bool
 pimCmdPrefixSum::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objSrc = m_device->getResMgr()->getObjInfo(m_src);
   PimDataType dataType = objSrc.getDataType();
   bool isVLayout = objSrc.isVLayout();
@@ -1566,6 +1590,9 @@ pimCmdMAC<T>::computeRegion(unsigned index)
 template <typename T> bool
 pimCmdMAC<T>::updateStats() const
 {
+  if(m_device->isInCmdFuse()) {
+    return true;
+  }
   const pimObjInfo& objSrc = m_device->getResMgr()->getObjInfo(m_src1);
   PimDataType dataType = objSrc.getDataType();
   bool isVLayout = objSrc.isVLayout();
