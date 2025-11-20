@@ -1,4 +1,4 @@
-// Test: Large Alloc
+// Test: Max Alloc
 // Copyright (c) 2025 University of Virginia
 // This file is licensed under the MIT License.
 // See the LICENSE file in the root of this repository for more details.
