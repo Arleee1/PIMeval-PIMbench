@@ -7,7 +7,7 @@
 #include <iostream>
 #include <cassert>
 
-bool testLargeAlloc(PimDeviceEnum deviceType)
+bool testMaxAlloc(PimDeviceEnum deviceType)
 {
   unsigned numRanks = 2;
   unsigned numBankPerRank = 2;
@@ -61,16 +61,16 @@ bool testLargeAlloc(PimDeviceEnum deviceType)
 
 int main()
 {
-  std::cout << "INFO: Large alloc test" << std::endl;
+  std::cout << "INFO: Max Alloc Test" << std::endl;
 
   bool ok = true;
-  ok &= testLargeAlloc(PIM_DEVICE_BITSIMD_V);
+  ok &= testMaxAlloc(PIM_DEVICE_BITSIMD_V);
   std::cout << "Suceeded for BITSiMD-V" << std::endl;
-  ok &= testLargeAlloc(PIM_DEVICE_BITSIMD_V_AP);
+  ok &= testMaxAlloc(PIM_DEVICE_BITSIMD_V_AP);
   std::cout << "Suceeded for BITSiMD-V-AP" << std::endl;
-  ok &= testLargeAlloc(PIM_DEVICE_BANK_LEVEL);
+  ok &= testMaxAlloc(PIM_DEVICE_BANK_LEVEL);
   std::cout << "Suceeded for Bank-Level PIM" << std::endl;
-  ok &= testLargeAlloc(PIM_DEVICE_FULCRUM);
+  ok &= testMaxAlloc(PIM_DEVICE_FULCRUM);
   std::cout << "Suceeded for Fulcrum PIM" << std::endl;
   std::cout << (ok ? "ALL PASSED!" : "FAILED!") << std::endl;
 
