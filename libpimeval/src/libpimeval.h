@@ -101,6 +101,7 @@ struct PimDeviceProperties {
   unsigned numRowPerSubarray = 0;
   unsigned numColPerSubarray = 0;
   unsigned numPIMCores = 0;
+  unsigned numRowPerCore = 0;
   bool isHLayoutDevice = false;
 };
 
