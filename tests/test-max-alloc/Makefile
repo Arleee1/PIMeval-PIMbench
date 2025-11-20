@@ -6,8 +6,8 @@
 PROJ_ROOT = ../..
 include ${PROJ_ROOT}/Makefile.common
 
-EXEC := large-alloc.out
-SRC := large-alloc.cpp
+EXEC := test-max-alloc.out
+SRC := test-max-alloc.cpp
 
 debug perf dramsim3_integ: $(EXEC)
 

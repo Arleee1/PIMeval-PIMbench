@@ -794,7 +794,6 @@ void
 pimResMgr::coreUsage::addRange(std::pair<unsigned, unsigned> range, PimObjId objId)
 {
   // aggregate with the prev range
-  unsigned numRowsToAlloc = range.second;
   if (!m_rangesInUse.empty()) {
     auto it = std::prev(m_rangesInUse.end());
     unsigned lastIdx = it->first.first;
@@ -808,7 +807,7 @@ pimResMgr::coreUsage::addRange(std::pair<unsigned, unsigned> range, PimObjId obj
   }
   m_rangesInUse.insert(std::make_pair(range, objId));
   m_newAlloc.insert(range);
-  m_totRowsInUse += numRowsToAlloc;
+  m_totRowsInUse += range.second;
 }
 
 //! @brief  Delete an object from core usage
