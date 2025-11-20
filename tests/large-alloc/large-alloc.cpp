@@ -46,6 +46,13 @@ bool testLargeAlloc(PimDeviceEnum deviceType)
       pimObjs[coreNum][i] = pimAllocAssociated(pimObjs[coreNum][0], PIM_FP32);
       assert(pimObjs[coreNum][i] != -1);
     }
+
+    // Free Test
+    status = pimFree(pimObjs[coreNum][0]);
+    assert(status == PIM_OK);
+
+    pimObjs[coreNum][0] = pimAllocAssociated(pimObjs[coreNum][1], PIM_FP32);
+    assert(pimObjs[coreNum][0] != -1);
   }
 
   pimShowStats();
