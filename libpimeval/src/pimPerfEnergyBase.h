@@ -73,6 +73,7 @@ public:
   virtual pimeval::perfEnergy getPerfEnergyForRotate(PimCmdEnum cmdType, const pimObjInfo& obj) const;
   virtual pimeval::perfEnergy getPerfEnergyForPrefixSum(PimCmdEnum cmdType, const pimObjInfo& obj) const;
   virtual pimeval::perfEnergy getPerfEnergyForMac(PimCmdEnum cmdType, const pimObjInfo& obj) const;
+  virtual pimeval::perfEnergy getPerfEnergyForFusedCmds(std::vector<std::unique_ptr<pimCmd>>& fusedCmds) const;
 
 protected:
   PimDeviceEnum m_simTarget;

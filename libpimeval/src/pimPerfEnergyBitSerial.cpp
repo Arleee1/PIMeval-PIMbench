@@ -504,3 +504,17 @@ pimPerfEnergyBitSerial::getPerfEnergyForPrefixSum(PimCmdEnum cmdType, const pimO
   printf("PIM-Warning: Perf energy model not available for PIM command %s\n", pimCmd::getName(cmdType, "").c_str());
   return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, totalOp);
 }
+
+//! @brief  Perf energy model of bit-serial PIM for fused commands
+pimeval::perfEnergy
+pimPerfEnergyBase::getPerfEnergyForFusedCmds(std::vector<std::unique_ptr<pimCmd>>& fusedCmds) const
+{
+  double msRuntime = 0.0;
+  double mjEnergy = 0.0;
+  double msRead = 0.0;
+  double msWrite = 0.0;
+  double msCompute = 0.0;
+  uint64_t totalOp = 0;
+
+  return pimeval::perfEnergy(msRuntime, mjEnergy, msRead, msWrite, msCompute, totalOp);
+}

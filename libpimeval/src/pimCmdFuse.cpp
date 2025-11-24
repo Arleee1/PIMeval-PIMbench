@@ -6,6 +6,7 @@
 
 #include "pimCmdFuse.h"
 #include "pimDevice.h"
+#include "pimSim.h"
 #include <cstdio>
 
 
@@ -39,10 +40,13 @@ pimCmdFuse::execute()
 bool
 pimCmdFuse::updateStats() const
 {
-  bool success = true;
-  for (auto& api : m_device->getFusedCmds()) {
-    success &= api->updateStats();
-  }
+  // bool success = true;
+  // for (auto& api : m_device->getFusedCmds()) {
+  //   success &= api->updateStats();
+  // }
+
+  pimeval::perfEnergy mPerfEnergy = pimSim::get()->getPerfEnergyModel()->getPerfEnergyForFusedCmds(m_device->getFusedCmds());
+  pimSim::get()->getStatsMgr()->recordCmd(getName(PIM_INT32, true), mPerfEnergy); // todo
   return true;
 }
 
