@@ -279,19 +279,19 @@ pimResMgr::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType da
   PimAllocLocation endAllocLocation = allocLocation;
   if(allocLocation.rank < 0) {
     startAllocLocation.rank = 0;
-    endAllocLocation.rank = m_device->getNumRanks();
+    endAllocLocation.rank = m_device->getNumRanks() - 1;
     startAllocLocation.bank = 0;
-    endAllocLocation.bank = m_device->getNumBankPerRank();
+    endAllocLocation.bank = m_device->getNumBankPerRank() - 1;
     startAllocLocation.subarray = 0;
-    endAllocLocation.subarray = m_device->getNumSubarrayPerBank();
+    endAllocLocation.subarray = m_device->getNumSubarrayPerBank() - 1;
   } else if(allocLocation.bank < 0) {
     startAllocLocation.bank = 0;
-    endAllocLocation.bank = m_device->getNumBankPerRank();
+    endAllocLocation.bank = m_device->getNumBankPerRank() - 1;
     startAllocLocation.subarray = 0;
-    endAllocLocation.subarray = m_device->getNumSubarrayPerBank();
+    endAllocLocation.subarray = m_device->getNumSubarrayPerBank() - 1;
   } else if(allocLocation.subarray < 0) {
     startAllocLocation.subarray = 0;
-    endAllocLocation.subarray = m_device->getNumSubarrayPerBank();
+    endAllocLocation.subarray = m_device->getNumSubarrayPerBank() - 1;
   }
   PimCoreId startCoreId = m_device->getCoreIdForAllocLocation(startAllocLocation);
   PimCoreId endCoreId = m_device->getCoreIdForAllocLocation(endAllocLocation);
