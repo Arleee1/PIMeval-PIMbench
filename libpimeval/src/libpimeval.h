@@ -135,7 +135,17 @@ PimStatus pimGetDeviceProperties(PimDeviceProperties* deviceProperties);
 PimStatus pimDeleteDevice();
 
 // Resource allocation and deletion
-PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType);
+//!@brief Allocation options
+// -1 in a field means "any" for that hierarchy level
+// If rank/bank/subarray are specified, the allocator will try to allocate in the specified hierarchy
+// Ignores granularity finer than the current architecture, e.g., subarray 0 is the same as subarray 1 for BITSIMD
+struct PimAllocLocation {
+  int64_t rank = -1;
+  int64_t bank = -1;
+  int64_t subarray = -1;
+};
+
+PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType, const PimAllocLocation& allocLocation = {});
 PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
 // Buffer will always be allocated in H layout; Current assumption is buffer is global and shared across all PIM cores in a chip/device. This assumption is based on AiM.
 // The buffer is used for broadcasting data to all PIM cores in a chip/device.
@@ -143,6 +153,7 @@ PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
 // TODO: Support per-core buffers (like UPMEM)
 PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
 PimStatus pimFree(PimObjId obj);
+PimStatus pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation);
 
 // Data transfer
 // Note: idxBegin and idxEnd specify the range of indexes to be processed by the PIM.
