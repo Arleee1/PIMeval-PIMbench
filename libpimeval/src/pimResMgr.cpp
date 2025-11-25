@@ -730,8 +730,11 @@ pimResMgr::pimFree(PimObjId objId)
 bool
 pimResMgr::pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation)
 {
-  assert(0); // todo
-  return false;
+  // currently only returns one core, todo: how to handle multiple
+  const pimObjInfo& objInfo = m_objMap.at(objId);
+  PimCoreId coreId = objInfo.getRegions()[0].getCoreId();
+  *allocLocation = m_device->getAllocLocationForCore(coreId);
+  return true;
 }
 
 //! @brief  Create an obj referencing to a range of an existing obj
