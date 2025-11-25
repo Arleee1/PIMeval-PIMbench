@@ -274,7 +274,30 @@ pimResMgr::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType da
 
   unsigned bitsPerElement = pimUtils::getNumBitsOfDataType(dataType, PimBitWidth::SIM);
 
-  std::vector<PimCoreId> sortedCoreId = getCoreIdsSortedByLeastUsage();
+  // Find range of available cores to allocate based on allocLocation
+  PimAllocLocation startAllocLocation = allocLocation;
+  PimAllocLocation endAllocLocation = allocLocation;
+  if(allocLocation.rank < 0) {
+    startAllocLocation.rank = 0;
+    endAllocLocation.rank = m_device->getNumRanks();
+    startAllocLocation.bank = 0;
+    endAllocLocation.bank = m_device->getNumBankPerRank();
+    startAllocLocation.subarray = 0;
+    endAllocLocation.subarray = m_device->getNumSubarrayPerBank();
+  } else if(allocLocation.bank < 0) {
+    startAllocLocation.bank = 0;
+    endAllocLocation.bank = m_device->getNumBankPerRank();
+    startAllocLocation.subarray = 0;
+    endAllocLocation.subarray = m_device->getNumSubarrayPerBank();
+  } else if(allocLocation.subarray < 0) {
+    startAllocLocation.subarray = 0;
+    endAllocLocation.subarray = m_device->getNumSubarrayPerBank();
+  }
+  PimCoreId startCoreId = m_device->getCoreIdForAllocLocation(startAllocLocation);
+  PimCoreId endCoreId = m_device->getCoreIdForAllocLocation(endAllocLocation);
+
+  // Contains pim cores sorted by least usage that match the given location
+  std::vector<PimCoreId> sortedCoreId = getCoreIdsSortedByLeastUsage(startCoreId, endCoreId);
   pimObjInfo newObj(m_availObjId, dataType, allocType, numElements, bitsPerElement, m_device);
   m_availObjId++;
 
@@ -326,6 +349,14 @@ pimResMgr::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType da
   if (numRegions > numCores) {
     if (allocType == PIM_ALLOC_V1 || allocType == PIM_ALLOC_H1) {
       printf("PIM-Error: pimAlloc: Allocation type %s does not allow to allocate more regions (%lu) than number of cores (%u)\n",
+             pimUtils::pimAllocEnumToStr(allocType).c_str(), numRegions, numCores);
+      return -1;
+    }
+  }
+
+  if (numRegions > sortedCoreId.size()) {
+    if (allocType == PIM_ALLOC_V1 || allocType == PIM_ALLOC_H1) {
+      printf("PIM-Error: pimAlloc: Allocation type %s does not allow to allocate more regions (%lu) than number of cores (%u) that fit the alloc location requirement\n",
              pimUtils::pimAllocEnumToStr(allocType).c_str(), numRegions, numCores);
       return -1;
     }
@@ -764,10 +795,10 @@ pimResMgr::findAvailRegionOnCore(PimCoreId coreId, unsigned numAllocRows, unsign
 
 //! @brief  Get a list of core IDs sorted by least usage
 std::vector<PimCoreId>
-pimResMgr::getCoreIdsSortedByLeastUsage() const
+pimResMgr::getCoreIdsSortedByLeastUsage(unsigned startCoreId, unsigned endCoreId) const
 {
   std::vector<std::pair<unsigned, unsigned>> usages;
-  for (unsigned coreId = 0; coreId < m_device->getNumCores(); ++coreId) {
+  for (unsigned coreId = startCoreId; coreId <= endCoreId; ++coreId) {
     unsigned usage = m_coreUsage.at(coreId)->getTotRowsInUse();
     usages.emplace_back(usage, coreId);
   }

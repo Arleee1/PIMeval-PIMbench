@@ -140,7 +140,7 @@ PimStatus pimDeleteDevice();
 // If rank/bank/subarray are specified, the allocator will try to allocate in the specified hierarchy
 // Ignores granularity finer than the current architecture, e.g., subarray 0 is the same as subarray 1 for BITSIMD
 // Also ignores everything after first -1, e.g., rank=0, bank=-1, subarray=2 is the same as rank=0, bank=-1, subarray=-1
-// Ignored if the object spans multiple cores
+// Fails if there are too many regions to allocate for the given location
 struct PimAllocLocation {
   int64_t rank = -1;
   int64_t bank = -1;

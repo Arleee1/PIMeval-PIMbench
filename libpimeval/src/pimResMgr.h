@@ -296,7 +296,7 @@ public:
 
 private:
   pimRegion findAvailRegionOnCore(PimCoreId coreId, unsigned numAllocRows, unsigned numAllocCols) const;
-  std::vector<PimCoreId> getCoreIdsSortedByLeastUsage() const;
+  std::vector<PimCoreId> getCoreIdsSortedByLeastUsage(unsigned startCoreId, unsigned endCoreId) const;
   
   //! @class  coreUsage
   //! @brief  Track row usage for allocation
