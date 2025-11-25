@@ -111,6 +111,14 @@ pimFree(PimObjId obj)
   return ok ? PIM_OK : PIM_ERROR;
 }
 
+//! @brief  Get PIM object location
+PimStatus
+pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation)
+{
+  bool ok = pimSim::get()->pimGetObjLocation(objId, allocLocation);
+  return ok ? PIM_OK : PIM_ERROR;
+}
+
 //! @brief  Create an obj referencing to a range of an existing obj
 PimObjId
 pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd)

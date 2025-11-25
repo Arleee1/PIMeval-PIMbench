@@ -64,6 +64,7 @@ public:
   PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
   PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
   bool pimFree(PimObjId obj);
+  bool pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation);
   PimObjId pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd);
   PimObjId pimCreateDualContactRef(PimObjId refId);
 

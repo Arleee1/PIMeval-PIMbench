@@ -259,6 +259,15 @@ pimSim::pimFree(PimObjId obj)
   return m_device->pimFree(obj);
 }
 
+//! @brief  Get PIM object location
+bool
+pimSim::pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation)
+{
+  pimPerfMon perfMon("pimGetObjLocation");
+  if (!isValidDevice()) { return false; }
+  return m_device->pimGetObjLocation(objId, allocLocation);
+}
+
 //! @brief  Create an obj referencing to a range of an existing obj
 PimObjId
 pimSim::pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd)

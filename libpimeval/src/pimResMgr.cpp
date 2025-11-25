@@ -695,6 +695,14 @@ pimResMgr::pimFree(PimObjId objId)
   return true;
 }
 
+//! @brief  Get PIM object location
+bool
+pimResMgr::pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation)
+{
+  assert(0); // todo
+  return false;
+}
+
 //! @brief  Create an obj referencing to a range of an existing obj
 PimObjId
 pimResMgr::pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd)

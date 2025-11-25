@@ -201,6 +201,13 @@ pimDevice::pimFree(PimObjId obj)
   return m_resMgr->pimFree(obj);
 }
 
+//! @brief  Get PIM object location
+bool
+pimDevice::pimGetObjLocation(PimObjId objId, PimAllocLocation* allocLocation)
+{
+  return m_resMgr->pimGetObjLocation(objId, allocLocation);
+}
+
 //! @brief  Create an obj referencing to a range of an existing obj
 PimObjId
 pimDevice::pimCreateRangedRef(PimObjId refId, uint64_t idxBegin, uint64_t idxEnd)
