@@ -71,6 +71,80 @@ pimDevice::adjustConfigForSimTarget(unsigned& numRanks, unsigned& numBankPerRank
   return true;
 }
 
+//! @brief  Get alloc location for a given core ID
+PimAllocLocation
+pimDevice::getAllocLocationForCore(PimCoreId coreId) const
+{
+  //todo: validate correctness
+  PimAllocLocation loc;
+  unsigned numCores = getNumCores();
+  unsigned numRanks = getNumRanks();
+  unsigned numBankPerRank = getNumBankPerRank();
+  unsigned numSubarrayPerBank = getNumSubarrayPerBank();
+  if(numCores == 1) {
+    return loc;
+  }
+
+  unsigned coresPerRank = numCores/numRanks;
+  loc.rank = coreId / coresPerRank;
+  if(coresPerRank == 1) {
+    return loc;
+  }
+
+  unsigned rem = coreId % coresPerRank;
+  if(coresPerRank <= numBankPerRank) {
+    unsigned coreIdxInRank = rem;
+    unsigned banksPerCore = numBankPerRank/coresPerRank;
+    loc.bank = coreIdxInRank * banksPerCore;
+    return loc;
+  }
+
+  unsigned coresPerBank = coresPerRank/numBankPerRank;
+  loc.bank = rem / coresPerBank;
+
+  unsigned coreIdxInBank = rem % coresPerBank;
+  unsigned subarraysPerCore = numSubarrayPerBank/coresPerBank;
+  loc.subarray = coreIdxInBank * subarraysPerCore;
+  return loc;
+}
+
+//! @brief  Get core ID for a given allocation location
+PimCoreId
+pimDevice::getCoreIdForAllocLocation(const PimAllocLocation& allocLocation) const
+{
+  assert(allocLocation.rank >=0 && allocLocation.bank >=0 && allocLocation.subarray >=0);
+  //todo: validate correctness
+  PimCoreId coreId = 0;
+  unsigned numCores = getNumCores();
+  unsigned numRanks = getNumRanks();
+  unsigned numBankPerRank = getNumBankPerRank();
+  unsigned numSubarrayPerBank = getNumSubarrayPerBank();
+  if(numCores == 1) {
+    return coreId;
+  }
+
+  unsigned coresPerRank = numCores/numRanks;
+  coreId = allocLocation.rank * coresPerRank;
+  if(coresPerRank == 1) {
+    return coreId;
+  }
+
+  if(coresPerRank <= numBankPerRank) {
+    unsigned banksPerCore = numBankPerRank/coresPerRank;
+    unsigned coreIdxInRank = allocLocation.bank / banksPerCore;
+    coreId += coreIdxInRank;
+    return coreId;
+  }
+
+  unsigned coresPerBank = coresPerRank/numBankPerRank;
+  coreId += allocLocation.bank * coresPerBank;
+
+  unsigned subarraysPerCore = numSubarrayPerBank/coresPerBank;
+  unsigned coreIdxInBank = allocLocation.subarray / subarraysPerCore;
+  coreId += coreIdxInBank;
+  return coreId;
+}
+
 //! @brief  If a PIM device uses vertical data layout
 bool
 pimDevice::isVLayoutDevice() const

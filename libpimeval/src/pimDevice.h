@@ -44,6 +44,8 @@ public:
   unsigned getNumCols() const { return m_numCols; }
   unsigned getBufferSize() const { return m_bufferSize; }
   bool isValid() const { return m_isValid; }
+  PimAllocLocation getAllocLocationForCore(PimCoreId coreId) const;
+  PimCoreId getCoreIdForAllocLocation(const PimAllocLocation& allocLocation) const;
 
   bool isVLayoutDevice() const;
   bool isHLayoutDevice() const;
