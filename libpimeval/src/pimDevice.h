@@ -49,7 +49,7 @@ public:
   bool isHLayoutDevice() const;
   bool isHybridLayoutDevice() const;
 
-  PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType);
+  PimObjId pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType, const PimAllocLocation& allocLocation);
   PimObjId pimAllocAssociated(PimObjId assocId, PimDataType dataType);
   PimObjId pimAllocBuffer(uint32_t numElements, PimDataType dataType);
   bool pimFree(PimObjId obj);

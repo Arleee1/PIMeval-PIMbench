@@ -226,11 +226,11 @@ pimSim::resetStats() const
 
 //! @brief  Allocate a PIM object
 PimObjId
-pimSim::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType)
+pimSim::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType, const PimAllocLocation& allocLocation)
 {
   pimPerfMon perfMon("pimAlloc");
   if (!isValidDevice()) { return -1; }
-  return m_device->pimAlloc(allocType, numElements, dataType);
+  return m_device->pimAlloc(allocType, numElements, dataType, allocLocation);
 }
 
 //! @brief  Allocate a PIM object that is associated with an existing ojbect

@@ -162,7 +162,7 @@ pimDevice::init()
 
 //! @brief  Alloc a PIM object
 PimObjId
-pimDevice::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType)
+pimDevice::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType, const PimAllocLocation& allocLocation)
 {
   if (allocType == PIM_ALLOC_AUTO) {
     if (isVLayoutDevice()) {
@@ -173,7 +173,7 @@ pimDevice::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType da
       assert(0);
     }
   }
-  return m_resMgr->pimAlloc(allocType, numElements, dataType);
+  return m_resMgr->pimAlloc(allocType, numElements, dataType, allocLocation);
 }
 
  //! @brief  Allocate a PIM buffer

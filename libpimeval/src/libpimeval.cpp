@@ -84,9 +84,9 @@ pimIsAnalysisMode()
 
 //! @brief  Allocate a PIM resource
 PimObjId
-pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType)
+pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType, const PimAllocLocation& allocLocation)
 {
-  return pimSim::get()->pimAlloc(allocType, numElements, dataType);
+  return pimSim::get()->pimAlloc(allocType, numElements, dataType, allocLocation);
 }
 
 //! @brief  Allocate a PIM resource, with an associated object as reference

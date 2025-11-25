@@ -259,7 +259,7 @@ pimResMgr::~pimResMgr()
 //!         For V layout, dataType determines the number of rows per region
 //!         For H layout, dataType determines the number of bits per element
 PimObjId
-pimResMgr::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType)
+pimResMgr::pimAlloc(PimAllocEnum allocType, uint64_t numElements, PimDataType dataType, const PimAllocLocation& allocLocation)
 {
   if (m_debugAlloc) {
     printf("PIM-Debug: pimAlloc: Request: %s %lu elements of type %s\n",
