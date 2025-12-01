@@ -22,7 +22,7 @@ bool testAllocLocation(PimDeviceEnum deviceType)
   status = pimGetDeviceProperties(&deviceProp);
   assert(status == PIM_OK);
 
-  uint64_t numElements = 10;
+  constexpr uint64_t numElements = 10;
 
   PimAllocLocation loc = {2, -1, -1};
   PimObjId obj1 = pimAlloc(PIM_ALLOC_AUTO, numElements, PIM_UINT8, loc);

@@ -114,12 +114,13 @@ pimDevice::getCoreIdForAllocLocation(const PimAllocLocation& allocLocation) cons
 {
   assert(allocLocation.rank >=0 && allocLocation.bank >=0 && allocLocation.subarray >=0);
   //todo: validate correctness
-  PimCoreId coreId = 0;
+  PimCoreId coreId;
   unsigned numCores = getNumCores();
   unsigned numRanks = getNumRanks();
   unsigned numBankPerRank = getNumBankPerRank();
   unsigned numSubarrayPerBank = getNumSubarrayPerBank();
   if(numCores == 1) {
+    coreId = 0;
     return coreId;
   }
 
