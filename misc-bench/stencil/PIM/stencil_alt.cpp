@@ -146,17 +146,19 @@ void sumStencilRow(PimObjId mid, PimObjId pimRowSum, PimObjId shiftBackup, const
   }
 }
 
-struct VertChunkPim {
+struct StencilTilePim {
   std::vector<PimObjId> rowsInSumCircularQueue;
   std::vector<PimObjId> workingPimMemory;
-  uint64_t firstRowIdxSrc;
+  uint64_t srcStartX;
+  uint64_t srcStartY;
+  uint64_t numX;
   PimObjId tmpPim;
   PimObjId runningSum;
 
-  VertChunkPim(uint64_t pimAllocWidth, uint64_t radius, uint64_t firstRowIdxSrc, uint64_t numRows)
-      : firstRowIdxSrc(firstRowIdxSrc) {
+  StencilTilePim(uint64_t radius, uint64_t srcStartY, uint64_t numY, uint64_t srcStartX, uint64_t numX)
+      : srcStartX(srcStartX), srcStartY(srcStartY), numX(numX) {
 
-    tmpPim = pimAlloc(PIM_ALLOC_AUTO, pimAllocWidth, PIM_FP32);
+    tmpPim = pimAlloc(PIM_ALLOC_AUTO, numX, PIM_FP32);
     assert(tmpPim != -1);
     runningSum = pimAllocAssociated(tmpPim, PIM_FP32);
     assert(runningSum != -1);
@@ -167,7 +169,7 @@ struct VertChunkPim {
       assert(rowsInSumCircularQueue[i] != -1);
     }
 
-    workingPimMemory.resize(numRows);
+    workingPimMemory.resize(numY);
     for(uint64_t i=0; i<workingPimMemory.size(); ++i) {
       workingPimMemory[i] = pimAllocAssociated(tmpPim, PIM_FP32);
       assert(workingPimMemory[i] != -1);
@@ -176,14 +178,14 @@ struct VertChunkPim {
 
   void copyToPim(const std::vector<std::vector<float>> &srcHost) {
     for(uint64_t idx = 0; idx < workingPimMemory.size(); ++idx) {
-      PimStatus status = pimCopyHostToDevice((void*) srcHost[firstRowIdxSrc + idx].data(), workingPimMemory[idx]);
+      PimStatus status = pimCopyHostToDevice((void*) (srcHost[srcStartY + idx].data() + srcStartX), workingPimMemory[idx], 0, numX);
       assert (status == PIM_OK);
     }
   }
 
   void copyFromPim(std::vector<std::vector<float>> &dstHost, const uint64_t numOverlap) {
     for(uint64_t idx = numOverlap; idx < workingPimMemory.size() - numOverlap; ++idx) {
-      PimStatus status = pimCopyDeviceToHost(workingPimMemory[idx], (void*) dstHost[firstRowIdxSrc + idx].data());
+      PimStatus status = pimCopyDeviceToHost(workingPimMemory[idx], (void*) dstHost[srcStartY + idx].data());
       assert (status == PIM_OK);
     }
   }
@@ -314,14 +316,14 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
     numVertChunks = 2 + numMiddleChunks;
   }
 
-  std::vector<VertChunkPim> vertChunks;
+  std::vector<StencilTilePim> vertChunks;
   vertChunks.reserve(numVertChunks);
 
   for(uint64_t chunkIdx=0; chunkIdx<numVertChunks; ++chunkIdx) {
-    const uint64_t firstRowIdxSrc = chunkIdx*(maxRowsPerVertChunk - 2*numOverlap);
-    const uint64_t lastRowIdxSrc = std::min(srcHost.size(), firstRowIdxSrc + maxRowsPerVertChunk);
-    const uint64_t numRows = lastRowIdxSrc - firstRowIdxSrc;
-    vertChunks.emplace_back(pimAllocWidth, radius, firstRowIdxSrc, numRows);
+    const uint64_t srcStartY = chunkIdx*(maxRowsPerVertChunk - 2*numOverlap);
+    const uint64_t lastRowIdxSrc = std::min(srcHost.size(), srcStartY + maxRowsPerVertChunk);
+    const uint64_t numY = lastRowIdxSrc - srcStartY;
+    vertChunks.emplace_back(pimAllocWidth, radius, srcStartY, numY);
     vertChunks.back().copyToPim(srcHost);
   }
 
