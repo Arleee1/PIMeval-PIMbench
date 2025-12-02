@@ -431,23 +431,6 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
           }
         }
       }
-      // for(uint64_t chunkIdx=0; chunkIdx<numTileY-1; ++chunkIdx) {
-      //   std::vector<PimObjId>& above = vertChunks[chunkIdx].workingPimMemory;
-      //   std::vector<PimObjId>& below = vertChunks[chunkIdx+1].workingPimMemory;
-
-      //   for(uint64_t row=0; row<numOverlap; ++row) {
-      //     PimObjId pimSrc;
-      //     PimObjId pimDst;
-          
-      //     pimSrc = above[above.size() - 2 * numOverlap + row];
-      //     pimDst = below[row];
-      //     pimMove(hostTmpRow, pimSrc, pimDst);
-
-      //     pimSrc = below[numOverlap + row];
-      //     pimDst = above[above.size() - numOverlap + row];
-      //     pimMove(hostTmpRow, pimSrc, pimDst);
-      //   }
-      // }
     }
   }
 
@@ -537,25 +520,8 @@ int main(int argc, char* argv[])
 
   constexpr uint64_t bitsPerElement = 32;
 
-  uint64_t numAssociable = deviceProp.numRowPerCore;
-  if(!deviceProp.isHLayoutDevice) {
-    numAssociable /= bitsPerElement;
-  }
-
-  uint64_t numElementsHorizontal;
-  if(deviceProp.isHLayoutDevice) {
-    switch(deviceProp.simTarget) {
-      case PIM_DEVICE_FULCRUM:
-      case PIM_DEVICE_BANK_LEVEL:
-        numElementsHorizontal = deviceProp.numColPerSubarray / bitsPerElement;
-        break;
-      default:
-        std::cerr << "Stencil unimplemented for simulation target: " << deviceProp.simTarget << std::endl;
-        std::exit(1);
-    }
-  } else {
-    numElementsHorizontal = deviceProp.numColPerSubarray;
-  }
+  const uint64_t numAssociable = deviceProp.isHLayoutDevice ? deviceProp.numRowPerCore : deviceProp.numRowPerCore / bitsPerElement;
+  const uint64_t numElementsHorizontal = deviceProp.isHLayoutDevice ? deviceProp.numColPerSubarray / bitsPerElement : deviceProp.numColPerSubarray;
 
   stencil(x, y, numAssociable, numElementsHorizontal, params.iterations, params.radius);
 
