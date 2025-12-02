@@ -315,7 +315,6 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   uint32_t tmp;
   std::memcpy(&tmp, &stencilAreaFloat, sizeof(float));
   const uint64_t stencilAreaToMultiplyPim = static_cast<uint64_t>(tmp);
-  const uint64_t pimAllocWidth = gridWidth;
 
   const uint64_t maxElemChunkY = numAssociable - (2*radius + 1) - 2;
   const uint64_t maxElemChunkX = numElementsHorizontal;
@@ -401,11 +400,10 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
 
           // handle corner communication
           if(tileIdxX+1 < numTileX && tileIdxY+1 < numTileY) {
-            StencilTilePim& tileRightBelow = stenTilesPim[tileIdxY+1][tileIdxX+1];
             std::vector<PimObjId>& topLeft = tile.workingPimMemory;
             std::vector<PimObjId>& topRight = stenTilesPim[tileIdxY][tileIdxX+1].workingPimMemory;
             std::vector<PimObjId>& bottomLeft = stenTilesPim[tileIdxY+1][tileIdxX].workingPimMemory;
-            std::vector<PimObjId>& bottomRight = tileRightBelow.workingPimMemory;
+            std::vector<PimObjId>& bottomRight = stenTilesPim[tileIdxY+1][tileIdxX+1].workingPimMemory;
             for(uint64_t row=0; row<numOverlap; ++row) {
               PimObjId pimSrc;
               PimObjId pimDst;
@@ -423,7 +421,7 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
               // top-right to bottom-left
               pimSrc = topRight[topRight.size() - 2 * numOverlap + row];
               pimDst = bottomLeft[row];
-              pimMove(hostTmpRow, pimSrc, pimDst, numOverlap, tile.numX - 2*numOverlap, numOverlap);
+              pimMove(hostTmpRow, pimSrc, pimDst, numOverlap, tile.numX - numOverlap, numOverlap);
 
               // bottom-left to top-right
               pimSrc = bottomLeft[numOverlap + row];
