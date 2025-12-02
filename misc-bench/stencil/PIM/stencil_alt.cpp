@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <queue>
 #include <random>
+#include <utility>
 #include <limits>
 #include <algorithm>
 #include <list>
@@ -152,11 +153,12 @@ struct StencilTilePim {
   uint64_t srcStartX;
   uint64_t srcStartY;
   uint64_t numX;
+  uint64_t numY;
   PimObjId tmpPim;
   PimObjId runningSum;
 
   StencilTilePim(uint64_t radius, uint64_t srcStartY, uint64_t numY, uint64_t srcStartX, uint64_t numX)
-      : srcStartX(srcStartX), srcStartY(srcStartY), numX(numX) {
+      : srcStartX(srcStartX), srcStartY(srcStartY), numX(numX), numY(numY) {
 
     tmpPim = pimAlloc(PIM_ALLOC_AUTO, numX, PIM_FP32);
     assert(tmpPim != -1);
@@ -185,7 +187,7 @@ struct StencilTilePim {
 
   void copyFromPim(std::vector<std::vector<float>> &dstHost, const uint64_t numOverlap) {
     for(uint64_t idx = numOverlap; idx < workingPimMemory.size() - numOverlap; ++idx) {
-      PimStatus status = pimCopyDeviceToHost(workingPimMemory[idx], (void*) dstHost[srcStartY + idx].data());
+      PimStatus status = pimCopyDeviceToHost(workingPimMemory[idx], (void*) (dstHost[srcStartY + idx].data() + srcStartX + numOverlap), numOverlap, numX - numOverlap);
       assert (status == PIM_OK);
     }
   }
@@ -267,11 +269,25 @@ struct StencilTilePim {
   }
 };
 
-void pimMove(std::vector<float>& hostTmpRow, PimObjId pimSrc, PimObjId pimDst) {
-  PimStatus status = pimCopyDeviceToHost(pimSrc, hostTmpRow.data());
+void pimMove(std::vector<float>& hostTmpRow, PimObjId pimSrc, PimObjId pimDst, uint64_t srcIdx, uint64_t dstIdx, uint64_t num) {
+  PimStatus status = pimCopyDeviceToHost(pimSrc, hostTmpRow.data(), srcIdx, srcIdx + num);
   assert(status == PIM_OK);
-  status = pimCopyHostToDevice(hostTmpRow.data(), pimDst);
+  status = pimCopyHostToDevice(hostTmpRow.data(), pimDst, dstIdx, dstIdx + num);
   assert(status == PIM_OK);
+}
+
+uint64_t getNumTiles(const uint64_t totalSize, const uint64_t maxChunkSize, const uint64_t numOverlap) {
+  if (totalSize <= maxChunkSize) {
+    return 1;
+  } else if (totalSize <= 2*(maxChunkSize - numOverlap)) {
+    return 2;
+  } else {
+    const uint64_t firstAndLastChunkRows = 2 * (maxChunkSize - numOverlap);
+    const uint64_t remainingRows = totalSize - firstAndLastChunkRows;
+    const uint64_t middleChunkSize = maxChunkSize - 2*numOverlap;
+    const uint64_t numMiddleChunks = (remainingRows + middleChunkSize - 1) / middleChunkSize;
+    return 2 + numMiddleChunks;
+  }
 }
 
 //! @brief  Computes a stencil pattern over a 2d array
@@ -301,61 +317,146 @@ void stencil(const std::vector<std::vector<float>> &srcHost, std::vector<std::ve
   const uint64_t stencilAreaToMultiplyPim = static_cast<uint64_t>(tmp);
   const uint64_t pimAllocWidth = gridWidth;
 
-  const uint64_t maxRowsPerVertChunk = numAssociable - (2*radius + 1) - 2;
+  const uint64_t maxElemChunkY = numAssociable - (2*radius + 1) - 2;
+  const uint64_t maxElemChunkX = numElementsHorizontal;
   const uint64_t numOverlap = radius;
-  uint64_t numVertChunks;
-  if (srcHost.size() <= maxRowsPerVertChunk) {
-    numVertChunks = 1;
-  } else if (srcHost.size() <= 2*(maxRowsPerVertChunk - numOverlap)) {
-    numVertChunks = 2;
-  } else {
-    const uint64_t firstAndLastChunkRows = 2 * (maxRowsPerVertChunk - numOverlap);
-    const uint64_t remainingRows = srcHost.size() - firstAndLastChunkRows;
-    const uint64_t middleChunkSize = maxRowsPerVertChunk - 2*numOverlap;
-    const uint64_t numMiddleChunks = (remainingRows + middleChunkSize - 1) / middleChunkSize;
-    numVertChunks = 2 + numMiddleChunks;
+  const uint64_t numTileX = getNumTiles(srcHost[0].size(), maxElemChunkX, numOverlap);
+  const uint64_t numTileY = getNumTiles(srcHost.size(), maxElemChunkY, numOverlap);
+
+  std::vector<std::vector<StencilTilePim>> stenTilesPim(numTileY);
+  for (auto& row : stenTilesPim) {
+    row.reserve(numTileX);
   }
 
-  std::vector<StencilTilePim> vertChunks;
-  vertChunks.reserve(numVertChunks);
-
-  for(uint64_t chunkIdx=0; chunkIdx<numVertChunks; ++chunkIdx) {
-    const uint64_t srcStartY = chunkIdx*(maxRowsPerVertChunk - 2*numOverlap);
-    const uint64_t lastRowIdxSrc = std::min(srcHost.size(), srcStartY + maxRowsPerVertChunk);
-    const uint64_t numY = lastRowIdxSrc - srcStartY;
-    vertChunks.emplace_back(pimAllocWidth, radius, srcStartY, numY);
-    vertChunks.back().copyToPim(srcHost);
+  for(uint64_t tileIdxY=0; tileIdxY<numTileY; ++tileIdxY) {
+    const uint64_t srcStartY = tileIdxY*(maxElemChunkY - 2*numOverlap);
+    const uint64_t lastElemIdxSrcY = std::min(srcHost.size(), srcStartY + maxElemChunkY);
+    const uint64_t numY = lastElemIdxSrcY - srcStartY;
+    for(uint64_t tileIdxX=0; tileIdxX<numTileX; ++tileIdxX) {
+      const uint64_t srcStartX = tileIdxX*(maxElemChunkX - 2*numOverlap);
+      const uint64_t lastElemIdxSrcX = std::min(srcHost[0].size(), srcStartX + maxElemChunkX);
+      const uint64_t numX = lastElemIdxSrcX - srcStartX;
+      stenTilesPim[tileIdxY].emplace_back(radius, srcStartY, numY, srcStartX, numX);
+      stenTilesPim[tileIdxY].back().copyToPim(srcHost);
+    }
   }
 
   std::vector<float> hostTmpRow(gridWidth, 0.0f);
 
   for(uint64_t iter=0; iter<iterations; ++iter) {
-    for(auto& vertChunk : vertChunks) {
-      vertChunk.computeStencilIteration(stencilAreaToMultiplyPim, radius);
+    for(auto& tileRow : stenTilesPim) {
+      for(auto& tile : tileRow) {
+        tile.computeStencilIteration(stencilAreaToMultiplyPim, radius);
+      }
     }
     if(iter+1<iterations) {
-      for(uint64_t chunkIdx=0; chunkIdx<numVertChunks-1; ++chunkIdx) {
-        std::vector<PimObjId>& above = vertChunks[chunkIdx].workingPimMemory;
-        std::vector<PimObjId>& below = vertChunks[chunkIdx+1].workingPimMemory;
+      for(uint64_t tileIdxY=0; tileIdxY<numTileY; ++tileIdxY) {
+        for(uint64_t tileIdxX=0; tileIdxX<numTileX; ++tileIdxX) {
+          StencilTilePim& tile = stenTilesPim[tileIdxY][tileIdxX];
 
-        for(uint64_t row=0; row<numOverlap; ++row) {
-          PimObjId pimSrc;
-          PimObjId pimDst;
-          
-          pimSrc = above[above.size() - 2 * numOverlap + row];
-          pimDst = below[row];
-          pimMove(hostTmpRow, pimSrc, pimDst);
+          // handle vertical communication
+          if(tileIdxY+1 < numTileY) {
+            StencilTilePim& tileBelow = stenTilesPim[tileIdxY+1][tileIdxX];
+            std::vector<PimObjId>& above = tile.workingPimMemory;
+            std::vector<PimObjId>& below = tileBelow.workingPimMemory;
 
-          pimSrc = below[numOverlap + row];
-          pimDst = above[above.size() - numOverlap + row];
-          pimMove(hostTmpRow, pimSrc, pimDst);
+            // only exchange rows with valid data
+            uint64_t startIdxX = tileIdxX == 0 ? 0 : numOverlap;
+            uint64_t endIdxX = tileIdxX == numTileX - 1 ? tile.numX : tile.numX - numOverlap; // exclusive
+            for(uint64_t row=0; row<numOverlap; ++row) {
+              PimObjId pimSrc;
+              PimObjId pimDst;
+              
+              pimSrc = above[above.size() - 2 * numOverlap + row];
+              pimDst = below[row];
+              pimMove(hostTmpRow, pimSrc, pimDst, startIdxX, startIdxX, endIdxX - startIdxX);
+    
+              pimSrc = below[numOverlap + row];
+              pimDst = above[above.size() - numOverlap + row];
+              pimMove(hostTmpRow, pimSrc, pimDst, startIdxX, startIdxX, endIdxX - startIdxX);
+            }
+          }
+
+          // handle horizontal communication
+          if(tileIdxX+1 < numTileX) {
+            StencilTilePim& tileRight = stenTilesPim[tileIdxY][tileIdxX+1];
+            std::vector<PimObjId>& left = tile.workingPimMemory;
+            std::vector<PimObjId>& right = tileRight.workingPimMemory;
+
+            // only exchange rows with valid data
+            uint64_t startIdxY = tileIdxY == 0 ? 0 : numOverlap;
+            uint64_t endIdxY = tileIdxY == numTileY - 1 ? tile.numY : tile.numY - numOverlap; // exclusive
+            for(uint64_t row=startIdxY; row<endIdxY; ++row) {
+              PimObjId pimSrc;
+              PimObjId pimDst;
+              
+              pimSrc = left[row];
+              pimDst = right[row];
+              pimMove(hostTmpRow, pimSrc, pimDst, tile.numX-2*numOverlap, 0, numOverlap);
+    
+              std::swap(pimSrc, pimDst);
+              pimMove(hostTmpRow, pimSrc, pimDst, numOverlap, tile.numX-numOverlap, numOverlap);
+            }
+          }
+
+          // handle corner communication
+          if(tileIdxX+1 < numTileX && tileIdxY+1 < numTileY) {
+            StencilTilePim& tileRightBelow = stenTilesPim[tileIdxY+1][tileIdxX+1];
+            std::vector<PimObjId>& topLeft = tile.workingPimMemory;
+            std::vector<PimObjId>& topRight = stenTilesPim[tileIdxY][tileIdxX+1].workingPimMemory;
+            std::vector<PimObjId>& bottomLeft = stenTilesPim[tileIdxY+1][tileIdxX].workingPimMemory;
+            std::vector<PimObjId>& bottomRight = tileRightBelow.workingPimMemory;
+            for(uint64_t row=0; row<numOverlap; ++row) {
+              PimObjId pimSrc;
+              PimObjId pimDst;
+              
+              // top-left to bottom-right
+              pimSrc = topLeft[topLeft.size() - 2 * numOverlap + row];
+              pimDst = bottomRight[row];
+              pimMove(hostTmpRow, pimSrc, pimDst, tile.numX - 2*numOverlap, 0, numOverlap);
+
+              // bottom-right to top-left
+              pimSrc = bottomRight[numOverlap + row];
+              pimDst = topLeft[topLeft.size() - numOverlap + row];
+              pimMove(hostTmpRow, pimSrc, pimDst, numOverlap, tile.numX - numOverlap, numOverlap);
+
+              // top-right to bottom-left
+              pimSrc = topRight[topRight.size() - 2 * numOverlap + row];
+              pimDst = bottomLeft[row];
+              pimMove(hostTmpRow, pimSrc, pimDst, numOverlap, tile.numX - 2*numOverlap, numOverlap);
+
+              // bottom-left to top-right
+              pimSrc = bottomLeft[numOverlap + row];
+              pimDst = topRight[topRight.size() - numOverlap + row];
+              pimMove(hostTmpRow, pimSrc, pimDst, tile.numX - 2*numOverlap, 0, numOverlap);
+            }
+          }
         }
       }
+      // for(uint64_t chunkIdx=0; chunkIdx<numTileY-1; ++chunkIdx) {
+      //   std::vector<PimObjId>& above = vertChunks[chunkIdx].workingPimMemory;
+      //   std::vector<PimObjId>& below = vertChunks[chunkIdx+1].workingPimMemory;
+
+      //   for(uint64_t row=0; row<numOverlap; ++row) {
+      //     PimObjId pimSrc;
+      //     PimObjId pimDst;
+          
+      //     pimSrc = above[above.size() - 2 * numOverlap + row];
+      //     pimDst = below[row];
+      //     pimMove(hostTmpRow, pimSrc, pimDst);
+
+      //     pimSrc = below[numOverlap + row];
+      //     pimDst = above[above.size() - numOverlap + row];
+      //     pimMove(hostTmpRow, pimSrc, pimDst);
+      //   }
+      // }
     }
   }
 
-  for(auto& vertChunk : vertChunks) {
-    vertChunk.copyFromPim(dstHost, numOverlap);
+  for(auto& tileRow : stenTilesPim) {
+    for(auto& tile : tileRow) {
+      tile.copyFromPim(dstHost, numOverlap);
+    }
   }
 }
 
@@ -438,7 +539,7 @@ int main(int argc, char* argv[])
 
   constexpr uint64_t bitsPerElement = 32;
 
-  uint64_t numAssociable = 2 * deviceProp.numRowPerSubarray;
+  uint64_t numAssociable = deviceProp.numRowPerCore;
   if(!deviceProp.isHLayoutDevice) {
     numAssociable /= bitsPerElement;
   }
