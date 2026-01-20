@@ -1,3 +1,7 @@
+// Proposal: Vectored PimObjGrid
+
+// This is a proposal to design a grid API for parallel execution across multiple PIM cores
+
 #include <cstdint>
 #include <vector>
 #include <cstdlib>
@@ -5,16 +9,19 @@
 #include "libpimeval.h"
 
 //! @brief Represents a grid of PimObjIds, possibly spread across multiple PIM cores
+//! @details Each PimObjId in the vector represents all cores
+//!             e.g., an operation on grid[0] applies to all cores in the grid
 typedef std::vector<PimObjId> PimObjGrid;
 
 //! @todo define and implement allocation strategies
 //! @brief Different strategies for allocating PimObjIds in a PimObjGrid - determines layout of cores in memory
 enum PimAllocationStrategy {
-  PIM_ALLOCATION_STRATEGY_1 = 0,
-  PIM_ALLOCATION_STRATEGY_2
+  PIM_ALLOCATION_STRATEGY_STENCIL_9_POINT = 0,
+  PIM_ALLOCATION_STRATEGY_GAME_OF_LIFE
+  // etc.
 };
 
-//! @brief Define grid of cores, with specified sizes of data per core - allocates with locality awareness
+//! @brief Allocate grid of cores, with specified sizes of data per core
 //! @param allocType: type of allocation (e.g. PIM_ALLOC_AUTO)
 //! @param dataType: type of data to be allocated
 //! @param numCoresVertical: number of cores to allocate in the vertical direction
@@ -23,17 +30,17 @@ enum PimAllocationStrategy {
 //! @param numElementsPerCoreHorizontal: number of elements to allocate per core in the horizontal direction
 //! @param allocationStrategy: strategy to use for allocation, determines the layout of cores within memory
 //! @return PimObjGrid representing the allocated grid of cores
-PimObjGrid pimAllocGrid(PimAllocEnum allocType, PimDataType dataType, size_t numCoresVertical,
-                                    size_t numCoresHorizontal, size_t numElementsPerCoreVertical,
-                                    size_t numElementsPerCoreHorizontal,
-                                    PimAllocationStrategy allocationStrategy = PIM_ALLOCATION_STRATEGY_1);
+PimObjGrid pimAllocGrid(PimAllocEnum allocType, PimDataType dataType,
+                                    size_t numCoresVertical, size_t numCoresHorizontal,
+                                    size_t numElementsPerCoreVertical, size_t numElementsPerCoreHorizontal,
+                                    PimAllocationStrategy allocationStrategy = PIM_ALLOCATION_STRATEGY_STENCIL_9_POINT);
 
 //! @brief Allocates more PimObjs associated with an existing PimObjId
 //! @param assocId: PimObjId to associate with
 //! @param dataType: type of data to be allocated
-//! @param numObjs: number of additional PimObjs to allocate
+//! @param numElementsPerCoreVertical: number of additional PimObjs to allocate
 //! @return PimObjGrid of newly allocated PimObjIds
-PimObjGrid pimAllocGridAssociated(PimObjId assocId, PimDataType dataType, size_t numObjs);
+PimObjGrid pimAllocGridAssociated(PimObjId assocId, PimDataType dataType, size_t numElementsPerCoreVertical);
 
 //! @brief Copies data from a flattened 2D array in host memory to a PimObjGrid
 //! @param src: flattened 2D array
@@ -70,17 +77,16 @@ PimStatus pimFreeGrid(PimObjGrid grid);
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 void copyHaloToAdjacent(PimObjGrid& grid) {
-    // Not yet implemented: would copy halo regions between adjacent cores in the grid
+    //! @todo Would copy halo regions between adjacent cores in the grid
+    //! Could be implemented using fixed strategies/enums
 }
 
 void stencilIteration(PimObjGrid& grid) {
-    // Not yet implemented: would perform stencil computation on each tile in the grid (possibly in parallel)
-    // Could mostly use existing stencil code
+    //! @todo Would perform a stencil iteration across all cores in parallel, would use existing stencil code
 }
 
 void gameOfLifeIteration(PimObjGrid& grid) {
-    // Not yet implemented: would perform Game of Life computation on each tile in the grid (possibly in parallel)
-    // Could mostly use existing Game of Life code
+    //! @todo Would perform a Game of Life iteration across all cores in parallel, would use existing Game of Life code
 }
 
 void exampleStencilUsage() {
@@ -96,19 +102,22 @@ void exampleStencilUsage() {
     const uint64_t numCoresHorizontal = srcWidth / tileWidth; // 4
 
     // 4x4 grid of cores, each core with 256x256 elements plus 1-element halo on each side
-    PimObjGrid grid = pimAllocGrid(PIM_ALLOC_AUTO, PIM_FP32, numCoresVertical, numCoresHorizontal, tileHeight + 2, tileWidth + 2);
+    PimObjGrid grid = pimAllocGrid(PIM_ALLOC_AUTO, PIM_FP32, numCoresVertical, numCoresHorizontal,
+                                    tileHeight + 2, tileWidth + 2, PIM_ALLOCATION_STRATEGY_STENCIL_9_POINT);
     assert(grid.size() > 0);
 
     float* src = (float*) std::malloc(srcWidth * srcHeight * sizeof(float)); // Example source data
 
     // Copy to PIM, skipping halo regions
     PimStatus status = pimCopyHostToGrid(src, grid, 1, tileWidth + 1, 1, tileHeight + 1);
-    // Fill the halo regions
+    // Fill the halo regions with data from adjacent cores
     copyHaloToAdjacent(grid);
 
     for(size_t iter = 0; iter < numIterations; ++iter) {
         stencilIteration(grid);
-        copyHaloToAdjacent(grid);
+        if(iter < numIterations - 1) { // Only need to copy halo if not the last iteration
+            copyHaloToAdjacent(grid);
+        }
     }
 
     float* dest = (float*) std::malloc(srcWidth * srcHeight * sizeof(float)); // Example destination data
@@ -140,7 +149,8 @@ void exampleGameOfLifeUsage() {
 
     // Allocate 1-element halo on each side
     // Use PIM_BOOL for Game of Life
-    PimObjGrid grid = pimAllocGrid(PIM_ALLOC_AUTO, PIM_BOOL, numCoresVertical, numCoresHorizontal, tileHeight + 2, tileWidth + 2);
+    PimObjGrid grid = pimAllocGrid(PIM_ALLOC_AUTO, PIM_BOOL, numCoresVertical, numCoresHorizontal,
+                                    tileHeight + 2, tileWidth + 2, PIM_ALLOCATION_STRATEGY_GAME_OF_LIFE);
     assert(grid.size() > 0);
 
     // Stores sums during GOL computation
@@ -152,12 +162,15 @@ void exampleGameOfLifeUsage() {
     // Copy to PIM, skipping halo regions
     PimStatus status = pimCopyHostToGrid(src, grid, 1, tileWidth + 1, 1, tileHeight + 1);
 
-    // Fill the halo regions
+    // Fill the halo regions with data from adjacent cores
     copyHaloToAdjacent(grid);
 
     for(size_t iter = 0; iter < numIterations; ++iter) {
         gameOfLifeIteration(grid);
-        copyHaloToAdjacent(grid);
+
+        if(iter < numIterations - 1) { // Only need to copy halo if not the last iteration
+            copyHaloToAdjacent(grid);
+        }
     }
 
     float* dest = (float*) std::malloc(srcWidth * srcHeight * sizeof(float)); // Example destination data
