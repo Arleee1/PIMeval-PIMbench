@@ -11,6 +11,8 @@
 //! @brief Represents a grid of PimObjIds, possibly spread across multiple PIM cores
 //! @details Each PimObjId in the vector represents all cores
 //!             e.g., an operation on grid[0] applies to all cores in the grid
+//!             However, operations are contained within each core unless explicitly copying data between cores,
+//!             e.g., pimShiftElementsLeft pads core boundaries with zeros
 typedef std::vector<PimObjId> PimObjGrid;
 
 //! @todo define and implement allocation strategies
